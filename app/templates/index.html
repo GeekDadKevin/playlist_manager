@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block title %}Import playlist{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Import a playlist</h2>
+    <p>Upload a local <code>.m3u</code> or <code>.jspf</code> file, or paste a remote JSPF URL for review.</p>
+
+    <form action="{{ url_for('web.review') }}" method="post" enctype="multipart/form-data" class="stack">
+      <label>
+        <span>Playlist file</span>
+        <input type="file" name="playlist_file" accept=".m3u,.m3u8,.jspf,.json">
+      </label>
+
+      <label>
+        <span>Remote JSPF URL</span>
+        <input type="url" name="jspf_url" placeholder="https://listenbrainz.org/playlist/.../export/jspf">
+      </label>
+
+      <button type="submit">Upload and review playlist</button>
+    </form>
+  </section>
+
+  <section class="card muted">
+    <h3>Sync requirements</h3>
+    <ul>
+      <li>Point <code>OCTO_FIESTA_BASE_URL</code> at your Octo-Fiesta instance.</li>
+      <li>Set <code>OCTO_FIESTA_USERNAME</code> plus either <code>OCTO_FIESTA_PASSWORD</code> or token/salt auth.</li>
+      <li>Use Deezer in Octo-Fiesta for the intended download workflow.</li>
+    </ul>
+  </section>
+{% endblock %}

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+
+# Environment files
+.env
+
+# Local data
+app.db
+data/
+instance/
+
+# Editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local Only files
+examples/

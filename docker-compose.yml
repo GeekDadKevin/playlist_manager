@@ -1,0 +1,34 @@
+services:
+  web:
+    build:
+      context: .
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
+      APP_PORT: "8000"
+      DATA_DIR: ${DATA_DIR:-/app/data}
+      UPLOAD_FOLDER: ${UPLOAD_FOLDER:-/app/data/uploads}
+      LISTENBRAINZ_JSPF_URL: ${LISTENBRAINZ_JSPF_URL:-}
+      OCTO_FIESTA_BASE_URL: ${OCTO_FIESTA_BASE_URL:-http://octo-fiesta:5274}
+      OCTO_FIESTA_HANDOFF_MODE: ${OCTO_FIESTA_HANDOFF_MODE:-download}
+      OCTO_FIESTA_USERNAME: ${OCTO_FIESTA_USERNAME:-}
+      OCTO_FIESTA_PASSWORD: ${OCTO_FIESTA_PASSWORD:-}
+      OCTO_FIESTA_TOKEN: ${OCTO_FIESTA_TOKEN:-}
+      OCTO_FIESTA_SALT: ${OCTO_FIESTA_SALT:-}
+      OCTO_FIESTA_CLIENT_NAME: ${OCTO_FIESTA_CLIENT_NAME:-jspf-converter}
+      OCTO_FIESTA_API_VERSION: ${OCTO_FIESTA_API_VERSION:-1.16.1}
+      OCTO_FIESTA_PROVIDER: ${OCTO_FIESTA_PROVIDER:-deezer}
+      OCTO_FIESTA_MATCH_THRESHOLD: ${OCTO_FIESTA_MATCH_THRESHOLD:-72}
+      SYNC_MAX_TRACKS: ${SYNC_MAX_TRACKS:-100}
+      NAVIDROME_BASE_URL: ${NAVIDROME_BASE_URL:-http://navidrome:4533}
+    volumes:
+      - .:/app
+      - playlist-data:/app/data
+    command: >
+      sh -c "uv sync --dev &&
+             uv run waitress-serve --host=0.0.0.0 --port=8000 app:app"
+
+volumes:
+  playlist-data:

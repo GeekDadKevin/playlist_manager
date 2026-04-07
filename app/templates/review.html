@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}Review playlist{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Review playlist</h2>
+    <p><strong>{{ total_tracks }}</strong> tracks parsed{% if truncated %}; showing the first {{ tracks|length }} entries{% endif %}.</p>
+
+    {% if upload %}
+      <ul>
+        <li><strong>Source:</strong> {{ upload.source_kind }}</li>
+        <li><strong>Original name:</strong> <code>{{ upload.original_name }}</code></li>
+        <li><strong>Saved as:</strong> <code>{{ upload.stored_name }}</code></li>
+        <li><strong>Saved path:</strong> <code>{{ upload.saved_path }}</code></li>
+        {% if upload.remote_url %}
+          <li><strong>Remote URL:</strong> <code>{{ upload.remote_url }}</code></li>
+        {% endif %}
+      </ul>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    {% if upload %}
+      <form action="{{ url_for('web.sync_upload') }}" method="post" class="stack">
+        <input type="hidden" name="saved_path" value="{{ upload.saved_path }}">
+        <label>
+          <span>Max tracks to sync</span>
+          <input type="number" name="max_tracks" min="1" max="1000" value="{{ sync_max_tracks }}">
+        </label>
+        <button type="submit" {% if not octo_configured %}disabled{% endif %}>Trigger Octo-Fiesta sync</button>
+        {% if not octo_configured %}
+          <p>Set <code>OCTO_FIESTA_USERNAME</code> and password/token values in <code>.env</code> to enable real sync.</p>
+        {% endif %}
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Artist</th>
+            <th>Title</th>
+            <th>Album</th>
+            <th>Duration</th>
+            <th>Deezer queries</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for track in tracks %}
+            <tr>
+              <td>{{ track.artist or '—' }}</td>
+              <td>{{ track.title }}</td>
+              <td>{{ track.album or '—' }}</td>
+              <td>{{ track.duration_seconds or '—' }}</td>
+              <td>
+                <ul class="query-list">
+                  {% for query in track.queries %}
+                    <li><code>{{ query }}</code></li>
+                  {% endfor %}
+                </ul>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
