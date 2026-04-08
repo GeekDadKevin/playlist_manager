@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ app_theme | default('dark') }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,8 +9,24 @@
   <body>
     <header class="site-header">
       <div>
-        <p class="eyebrow">Dockerized Flask + uv + ruff</p>
         <h1><a href="{{ url_for('web.index') }}">Octo Playlist Sync</a></h1>
+        <nav class="app-tabs" aria-label="App sections">
+          <a class="app-tab {% if request.endpoint == 'web.index' %}is-active{% endif %}" href="{{ url_for('web.index') }}">Import</a>
+          {% if active_review_url %}
+            <a class="app-tab {% if request.endpoint == 'web.review_page' %}is-active{% endif %}" href="{{ active_review_url }}">Review</a>
+          {% else %}
+            <span class="app-tab is-disabled">Review</span>
+          {% endif %}
+          {% if active_sync_job_url %}
+            <a class="app-tab {% if request.endpoint == 'web.sync_status_page' %}is-active{% endif %}" href="{{ active_sync_job_url }}">
+              Sync status{% if active_sync_status %} · {{ active_sync_status.replace('_', ' ')|title }}{% endif %}
+            </a>
+          {% else %}
+            <span class="app-tab is-disabled">Sync status</span>
+          {% endif %}
+          <a class="app-tab {% if request.endpoint == 'web.stats_page' %}is-active{% endif %}" href="{{ url_for('web.stats_page') }}">Stats</a>
+          <a class="app-tab {% if request.endpoint == 'web.settings_page' %}is-active{% endif %}" href="{{ url_for('web.settings_page') }}">Settings</a>
+        </nav>
       </div>
     </header>
 
@@ -27,5 +43,41 @@
 
       {% block content %}{% endblock %}
     </main>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        for (const tabset of document.querySelectorAll("[data-tabset]")) {
+          const buttons = Array.from(tabset.querySelectorAll("[data-tab-button]"));
+          const panels = Array.from(tabset.querySelectorAll("[data-tab-panel]"));
+
+          if (!buttons.length || !panels.length) {
+            continue;
+          }
+
+          const activate = (name) => {
+            for (const button of buttons) {
+              const isActive = button.dataset.tabButton === name;
+              button.classList.toggle("is-active", isActive);
+              button.setAttribute("aria-selected", isActive ? "true" : "false");
+            }
+
+            for (const panel of panels) {
+              const isActive = panel.dataset.tabPanel === name;
+              panel.classList.toggle("is-active", isActive);
+              panel.hidden = !isActive;
+            }
+          };
+
+          const defaultButton = buttons.find((button) => button.hasAttribute("data-tab-default")) || buttons[0];
+          for (const button of buttons) {
+            button.addEventListener("click", () => activate(button.dataset.tabButton));
+          }
+
+          activate(defaultButton.dataset.tabButton);
+        }
+      });
+    </script>
+
+    {% block scripts %}{% endblock %}
   </body>
 </html>

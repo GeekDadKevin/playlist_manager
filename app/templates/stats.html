@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Playlist stats{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Playlist stats</h2>
+    <p>
+      This page tracks what the tool has already processed: playlist runs, successful downloads,
+      already-available songs, failures, and recent song activity.
+    </p>
+  </section>
+
+  <section class="stats-grid">
+    <article class="card stat-card">
+      <h3>Total playlists tracked</h3>
+      <p class="stat-value">{{ summary.total_playlists }}</p>
+      <p class="help-text">Across {{ summary.total_runs }} recorded import or sync run(s).</p>
+    </article>
+    <article class="card stat-card">
+      <h3>Total songs seen</h3>
+      <p class="stat-value">{{ summary.total_tracks }}</p>
+      <p class="help-text">Every playlist item stored in the local history database.</p>
+    </article>
+    <article class="card stat-card">
+      <h3>Downloaded</h3>
+      <p class="stat-value">{{ summary.total_downloaded }}</p>
+      <p class="help-text">Tracks Octo-Fiesta attempted to fetch.</p>
+    </article>
+    <article class="card stat-card">
+      <h3>Already available</h3>
+      <p class="stat-value">{{ summary.total_already_available }}</p>
+      <p class="help-text">Tracks already present in your library.</p>
+    </article>
+  </section>
+
+  <section class="card">
+    <h3>Completion snapshot</h3>
+    <div class="metric-row">
+      <span>Completed or already available</span>
+      <strong>{{ summary.completion_percent }}%</strong>
+    </div>
+    <progress
+      class="metric-progress"
+      value="{{ summary.completion_percent }}"
+      max="100"
+    >{{ summary.completion_percent }}%</progress>
+    <ul class="summary-list compact-list">
+      <li><strong>Failures:</strong> {{ summary.total_failed }}</li>
+      <li><strong>Still missing:</strong> {{ summary.total_missing }}</li>
+    </ul>
+  </section>
+
+  <div class="settings-grid">
+    <section class="card">
+      <h3>Top artists in tracked playlists</h3>
+      {% if history.top_artists %}
+        <ul class="stacked-list">
+          {% for artist in history.top_artists %}
+            <li class="metric-list-item">
+              <span>{{ artist.artist }}</span>
+              <strong>{{ artist.track_count }}</strong>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="help-text">No artist history has been recorded yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h3>Tracked playlists</h3>
+      {% if history.tracked_playlists %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Playlist</th>
+                <th>Last run</th>
+                <th>Downloaded</th>
+                <th>Already had</th>
+                <th>Failed</th>
+                <th>File</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for playlist in history.tracked_playlists %}
+                <tr>
+                  <td>{{ playlist.playlist_name }}</td>
+                  <td><code>{{ playlist.created_at }}</code></td>
+                  <td>{{ playlist.downloaded_count }}</td>
+                  <td>{{ playlist.already_available_count }}</td>
+                  <td>{{ playlist.failed_count }}</td>
+                  <td><code>{{ playlist.filename }}</code></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="help-text">No playlist history has been recorded yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="card">
+    <h3>Recent track activity</h3>
+    {% if history.recent_tracks %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Playlist</th>
+              <th>Artist</th>
+              <th>Title</th>
+              <th>Status</th>
+              <th>Deezer / Match ID</th>
+              <th>Local path</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for track in history.recent_tracks %}
+              <tr>
+                <td>{{ track.playlist_name }}</td>
+                <td>{{ track.artist or '—' }}</td>
+                <td>{{ track.title }}</td>
+                <td>{{ track.status or '—' }}</td>
+                <td><code>{{ track.deezer_id or '—' }}</code></td>
+                <td><code>{{ track.local_path or '—' }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="help-text">Track-level stats will appear here after your first export or sync.</p>
+    {% endif %}
+  </section>
+{% endblock %}

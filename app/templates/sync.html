@@ -3,73 +3,82 @@
 {% block title %}Live sync progress{% endblock %}
 
 {% block content %}
-  <section class="card">
-    <h2>Octo-Fiesta live sync</h2>
-    <p>This page auto-refreshes while Octo-Fiesta processes the playlist one track at a time.</p>
-
-    <div class="progress-meta">
-      <span class="status-pill status-{{ job.status }}" id="job-status">{{ job.status }}</span>
-      <span id="progress-text">{{ job.sync.summary.processed }} / {{ job.sync.summary.requested }} tracks</span>
+  <div class="tab-shell" data-tabset>
+    <div class="tab-list" role="tablist" aria-label="Sync workflow">
+      <button type="button" class="tab-button is-active" data-tab-button="progress" data-tab-default aria-selected="true">Progress</button>
+      <button type="button" class="tab-button" data-tab-button="results" aria-selected="false">Results</button>
     </div>
 
-    <div class="progress-shell">
-      <div class="progress-bar">
-        <div class="progress-fill" id="progress-fill" style="width: {{ job.progress_percent }}%;"></div>
+    <section class="card tab-panel is-active" data-tab-panel="progress">
+      <h2>Octo-Fiesta live sync</h2>
+      <p>This page auto-refreshes while Octo-Fiesta processes the playlist one track at a time.</p>
+
+      <div class="progress-meta">
+        <span class="status-pill status-{{ job.status }}" id="job-status">{{ job.status }}</span>
+        <span id="progress-text">{{ job.sync.summary.processed }} / {{ job.sync.summary.requested }} tracks</span>
       </div>
-    </div>
 
-    <ul class="summary-list">
-      <li><strong>Mode:</strong> <span id="sync-mode">{{ job.sync.processing_mode }}</span></li>
-      <li><strong>Started:</strong> <code id="sync-started">{{ job.started_at or job.sync.started_at }}</code></li>
-      <li><strong>Completed:</strong> <code id="sync-completed">{{ job.completed_at or job.sync.completed_at }}</code></li>
-      <li><strong>Preview:</strong> <span id="count-preview">{{ job.sync.summary.preview }}</span></li>
-      <li><strong>Downloaded:</strong> <span id="count-downloaded">{{ job.sync.summary.downloaded }}</span></li>
-      <li><strong>Already available:</strong> <span id="count-local">{{ job.sync.summary.already_available }}</span></li>
-      <li><strong>Low confidence:</strong> <span id="count-low">{{ job.sync.summary.low_confidence }}</span></li>
-      <li><strong>Not found:</strong> <span id="count-missing">{{ job.sync.summary.not_found }}</span></li>
-      <li><strong>Failed:</strong> <span id="count-failed">{{ job.sync.summary.failed }}</span></li>
-      <li><strong>Saved upload:</strong> <code>{{ job.upload.saved_path }}</code></li>
-    </ul>
+      <div class="progress-shell">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width: {{ job.progress_percent }}%;"></div>
+        </div>
+      </div>
 
-    <p id="job-error" class="flash flash-error" {% if not job.error %}hidden{% endif %}>{{ job.error }}</p>
-  </section>
+      <ul class="summary-list">
+        <li><strong>Mode:</strong> <span id="sync-mode">{{ job.sync.processing_mode }}</span></li>
+        <li><strong>Started:</strong> <code id="sync-started">{{ job.started_at or job.sync.started_at }}</code></li>
+        <li><strong>Completed:</strong> <code id="sync-completed">{{ job.completed_at or job.sync.completed_at }}</code></li>
+        <li><strong>Preview:</strong> <span id="count-preview">{{ job.sync.summary.preview }}</span></li>
+        <li><strong>Downloaded:</strong> <span id="count-downloaded">{{ job.sync.summary.downloaded }}</span></li>
+        <li><strong>Already available:</strong> <span id="count-local">{{ job.sync.summary.already_available }}</span></li>
+        <li><strong>Low confidence:</strong> <span id="count-low">{{ job.sync.summary.low_confidence }}</span></li>
+        <li><strong>Not found:</strong> <span id="count-missing">{{ job.sync.summary.not_found }}</span></li>
+        <li><strong>Failed:</strong> <span id="count-failed">{{ job.sync.summary.failed }}</span></li>
+        <li><strong>Saved upload:</strong> <code>{{ job.upload.saved_path }}</code></li>
+        <li><strong>Navidrome playlist:</strong> <code id="playlist-export-path">{{ job.sync.playlist_export.target_path if job.sync.playlist_export else '—' }}</code></li>
+      </ul>
 
-  <section class="card">
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Status</th>
-            <th>Artist</th>
-            <th>Title</th>
-            <th>Score</th>
-            <th>Match ID</th>
-            <th>Completed</th>
-            <th>Message</th>
-          </tr>
-        </thead>
-        <tbody id="results-body">
-          {% for item in job.sync.results %}
+      <p id="playlist-export-note" class="help-text">{% if job.sync.playlist_export %}{% if job.sync.playlist_export.written %}Wrote {{ job.sync.playlist_export.entry_count }} track(s) to the Navidrome playlist file.{% if job.sync.playlist_export.missing_count %} {{ job.sync.playlist_export.missing_count }} still pending Octo-Fiesta download.{% endif %}{% else %}{{ job.sync.playlist_export.reason or 'Navidrome playlist export is waiting for sync results.' }}{% endif %}{% endif %}</p>
+      <p id="job-error" class="flash flash-error" {% if not job.error %}hidden{% endif %}>{{ job.error }}</p>
+    </section>
+
+    <section class="card tab-panel" data-tab-panel="results" hidden>
+      <div class="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td>{{ item.index }}</td>
-              <td><strong>{{ item.status }}</strong></td>
-              <td>{{ item.track.artist or '—' }}</td>
-              <td>{{ item.track.title }}</td>
-              <td>{{ item.match.score if item.match else '—' }}</td>
-              <td><code>{{ item.match.id if item.match else '—' }}</code></td>
-              <td><code>{{ item.completed_at }}</code></td>
-              <td>{{ item.message }}</td>
+              <th>#</th>
+              <th>Status</th>
+              <th>Artist</th>
+              <th>Title</th>
+              <th>Score</th>
+              <th>Match ID</th>
+              <th>Completed</th>
+              <th>Message</th>
             </tr>
-          {% else %}
-            <tr>
-              <td colspan="8">Waiting for the first track result…</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+          </thead>
+          <tbody id="results-body">
+            {% for item in job.sync.results %}
+              <tr>
+                <td>{{ item.index }}</td>
+                <td><strong>{{ item.status }}</strong></td>
+                <td>{{ item.track.artist or '—' }}</td>
+                <td>{{ item.track.title }}</td>
+                <td>{{ item.match.score if item.match else '—' }}</td>
+                <td><code>{{ item.match.id if item.match else '—' }}</code></td>
+                <td><code>{{ item.completed_at }}</code></td>
+                <td>{{ item.message }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="8">Waiting for the first track result…</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 
   <script>
     const statusUrl = {{ url_for('web.sync_status', job_id=job.job_id) | tojson }};
@@ -119,6 +128,19 @@
       document.getElementById('count-low').textContent = summary.low_confidence;
       document.getElementById('count-missing').textContent = summary.not_found;
       document.getElementById('count-failed').textContent = summary.failed;
+
+      const playlistExport = job.sync.playlist_export || null;
+      const playlistExportPath = document.getElementById('playlist-export-path');
+      const playlistExportNote = document.getElementById('playlist-export-note');
+      if (playlistExport) {
+        playlistExportPath.textContent = playlistExport.target_path || '—';
+        playlistExportNote.textContent = playlistExport.written
+          ? `Wrote ${playlistExport.entry_count ?? 0} track(s) to the Navidrome playlist file.${playlistExport.missing_count ? ` ${playlistExport.missing_count} still pending Octo-Fiesta download.` : ''}`
+          : (playlistExport.reason || 'Navidrome playlist export is waiting for sync results.');
+      } else {
+        playlistExportPath.textContent = '—';
+        playlistExportNote.textContent = '';
+      }
 
       const errorBox = document.getElementById('job-error');
       if (job.error) {

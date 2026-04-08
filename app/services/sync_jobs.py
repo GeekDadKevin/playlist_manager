@@ -6,7 +6,9 @@ from typing import Any
 from uuid import uuid4
 
 from app.models import PlaylistUpload
+from app.services.navidrome_playlists import export_navidrome_playlist
 from app.services.octo_fiesta import OctoFiestaService, _utc_timestamp
+from app.services.playlist_history import record_playlist_run
 
 _JOBS: dict[str, dict[str, Any]] = {}
 _JOBS_LOCK = Lock()
@@ -52,11 +54,17 @@ def create_sync_job(upload: PlaylistUpload, max_tracks: int) -> str:
     return job_id
 
 
-def start_sync_job(upload: PlaylistUpload, octo: OctoFiestaService, max_tracks: int) -> str:
+def start_sync_job(
+    upload: PlaylistUpload,
+    octo: OctoFiestaService,
+    max_tracks: int,
+    navidrome_playlists_dir: str = "",
+    playlist_db_path: str = "",
+) -> str:
     job_id = create_sync_job(upload, max_tracks)
     worker = Thread(
         target=_run_sync_job,
-        args=(job_id, upload, octo, max_tracks),
+        args=(job_id, upload, octo, max_tracks, navidrome_playlists_dir, playlist_db_path),
         daemon=True,
         name=f"sync-job-{job_id[:8]}",
     )
@@ -75,6 +83,8 @@ def _run_sync_job(
     upload: PlaylistUpload,
     octo: OctoFiestaService,
     max_tracks: int,
+    navidrome_playlists_dir: str,
+    playlist_db_path: str,
 ) -> None:
     _update_job(
         job_id,
@@ -100,6 +110,33 @@ def _run_sync_job(
             },
         )
         return
+
+    if navidrome_playlists_dir:
+        try:
+            final_result["playlist_export"] = export_navidrome_playlist(
+                playlist_dir=navidrome_playlists_dir,
+                playlist_name=upload.playlist_name or upload.original_name,
+                sync_results=final_result.get("results", []),
+            )
+        except Exception as exc:  # pragma: no cover - filesystem dependent
+            final_result["playlist_export"] = {
+                "configured": True,
+                "written": False,
+                "playlist_name": upload.playlist_name or upload.original_name,
+                "reason": str(exc),
+            }
+
+    if playlist_db_path:
+        record_playlist_run(
+            playlist_db_path,
+            playlist_name=upload.playlist_name or upload.original_name,
+            source_kind=upload.source_kind,
+            original_name=upload.original_name,
+            remote_url=upload.remote_url,
+            saved_path=upload.saved_path,
+            sync_result=final_result,
+            export_result=final_result.get("playlist_export", {}),
+        )
 
     _update_job(
         job_id,

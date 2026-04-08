@@ -1,0 +1,32 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pytest-env-validation
+        name: pytest env validation
+        entry: uv run python -m pytest tests/test_validate_env.py
+        language: system
+        pass_filenames: false
+
+      - id: pytest-fast-suite
+        name: pytest fast suite
+        entry: uv run python -m pytest tests/test_app.py tests/test_parsers.py tests/test_matching.py tests/test_octo_fiesta.py tests/test_listenbrainz.py
+        language: system
+        pass_filenames: false

@@ -243,6 +243,10 @@ class OctoFiestaService:
             result["message"] = str(exc)
             return result
 
+        resolved_match = self._find_local_match(track)
+        if resolved_match is not None:
+            result["resolved_match"] = resolved_match
+
         result["status"] = "downloaded"
         result["message"] = "Download triggered successfully through `/rest/stream`."
         result["download"] = download_result
@@ -281,6 +285,7 @@ class OctoFiestaService:
                     "artist": item.get("artist", ""),
                     "album": item.get("album", ""),
                     "duration_seconds": item.get("duration"),
+                    "path": item.get("path", ""),
                     "source_kind": source_kind,
                     "provider": provider or ("navidrome" if source_kind == "local" else "external"),
                 }
@@ -324,6 +329,17 @@ class OctoFiestaService:
                 "Set `OCTO_FIESTA_BASE_URL`, `OCTO_FIESTA_USERNAME`, and either "
                 "`OCTO_FIESTA_PASSWORD` or `OCTO_FIESTA_TOKEN` + `OCTO_FIESTA_SALT`."
             )
+
+    def _find_local_match(self, track: PlaylistTrack) -> dict[str, Any] | None:
+        try:
+            ranked = self.search_track(track)
+        except Exception:  # pragma: no cover - best-effort enrichment only
+            return None
+
+        for candidate in ranked:
+            if candidate.get("source_kind") == "local" and candidate.get("path"):
+                return candidate
+        return None
 
     @staticmethod
     def _provider_from_id(item_id: str) -> str:

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <h2>Settings</h2>
+    <p>
+      Save the app theme and the weekly automation schedule. The scheduled run targets
+      the ListenBrainz <code>Weekly Exploration</code> and <code>Weekly Jams</code>
+      playlists and overwrites the same Navidrome <code>.m3u</code> files each week.
+    </p>
+  </section>
+
+  <form action="{{ url_for('web.settings_page') }}" method="post" class="stack">
+    <div class="settings-grid">
+      <section class="card">
+        <h3>Appearance</h3>
+        <label>
+          <span>Theme</span>
+          <select name="theme">
+            {% for value, label in theme_options %}
+              <option value="{{ value }}" {% if settings.theme == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="help-text">Choose between the app’s dark theme, a light theme, or your system preference.</p>
+      </section>
+
+      <section class="card">
+        <h3>Weekly automation</h3>
+        <label class="checkbox-row">
+          <input type="checkbox" name="automation_enabled" {% if settings.automation_enabled %}checked{% endif %}>
+          <span>Enable automatic weekly playlist import</span>
+        </label>
+
+        <label>
+          <span>Schedule day</span>
+          <select name="schedule_day">
+            {% for value, label in schedule_days %}
+              <option value="{{ value }}" {% if settings.schedule_day == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span>Schedule time</span>
+          <input type="time" name="schedule_time" value="{{ settings.schedule_time }}">
+        </label>
+
+        <label>
+          <span>Auto-import playlist names</span>
+          <input
+            type="text"
+            name="playlist_targets"
+            value="{{ settings.playlist_targets | join(', ') }}"
+            placeholder="Weekly Exploration, Weekly Jams"
+          >
+        </label>
+        <p class="help-text">
+          These weekly targets stay visible in the ListenBrainz chooser after import so you can
+          refresh them later; other imported playlists are hidden by default.
+        </p>
+
+        <label class="checkbox-row">
+          <input type="checkbox" name="sync_with_octo" {% if settings.sync_with_octo %}checked{% endif %}>
+          <span>Also run the Octo-Fiesta sync/download flow during scheduled imports</span>
+        </label>
+
+        <ul class="summary-list compact-list">
+          <li><strong>Cron preview:</strong> <code>{{ cron_preview }}</code></li>
+          <li><strong>Last run:</strong> <code>{{ settings.last_run_at or 'Never' }}</code></li>
+          <li><strong>Status:</strong> <span>{{ settings.last_run_status | replace('_', ' ') | title }}</span></li>
+        </ul>
+        <p class="help-text">{{ settings.last_run_message }}</p>
+      </section>
+    </div>
+
+    <div class="action-row">
+      <button type="submit" name="action" value="save">Save settings</button>
+      <button type="submit" name="action" value="run_now">Run weekly import now</button>
+    </div>
+  </form>
+
+  <section class="stats-grid">
+    <article class="card stat-card">
+      <h3>Tracked playlists</h3>
+      <p class="stat-value">{{ stats_summary.total_playlists }}</p>
+      <p class="help-text">Distinct playlist names currently stored in the local database.</p>
+    </article>
+    <article class="card stat-card">
+      <h3>Tracked songs</h3>
+      <p class="stat-value">{{ stats_summary.total_tracks }}</p>
+      <p class="help-text">Songs collected from every import and sync run so far.</p>
+    </article>
+    <article class="card stat-card">
+      <h3>Downloaded</h3>
+      <p class="stat-value">{{ stats_summary.total_downloaded }}</p>
+      <p class="help-text">Songs the tool asked Octo-Fiesta to fetch.</p>
+    </article>
+    <article class="card stat-card">
+      <h3>Already had</h3>
+      <p class="stat-value">{{ stats_summary.total_already_available }}</p>
+      <p class="help-text">Songs already present in your library when matched.</p>
+    </article>
+  </section>
+
+  <section class="card">
+    <h3>Tracked playlists</h3>
+    <p class="help-text">
+      These are the most recent playlist versions created with the tool. Use the button to send
+      any one of them back to the Navidrome playlists directory again.
+    </p>
+
+    {% if tracked_playlists %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Playlist</th>
+              <th>Last run</th>
+              <th>Downloaded</th>
+              <th>Already had</th>
+              <th>Failed</th>
+              <th>File</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for playlist in tracked_playlists %}
+              <tr>
+                <td>{{ playlist.playlist_name }}</td>
+                <td><code>{{ playlist.created_at }}</code></td>
+                <td>{{ playlist.downloaded_count }}</td>
+                <td>{{ playlist.already_available_count }}</td>
+                <td>{{ playlist.failed_count }}</td>
+                <td><code>{{ playlist.filename }}</code></td>
+                <td>
+                  <form action="{{ url_for('web.export_history_playlist') }}" method="post">
+                    <input type="hidden" name="run_id" value="{{ playlist.run_id }}">
+                    <button type="submit">Send to Navidrome now</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="help-text">No playlist history has been recorded yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

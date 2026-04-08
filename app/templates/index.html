@@ -3,31 +3,163 @@
 {% block title %}Import playlist{% endblock %}
 
 {% block content %}
-  <section class="card">
-    <h2>Import a playlist</h2>
-    <p>Upload a local <code>.m3u</code> or <code>.jspf</code> file, or paste a remote JSPF URL for review.</p>
+  {% if active_sync_job_url %}
+    <section class="card">
+      <h2>Active sync</h2>
+      <p>
+        Your current sync is <strong>{{ active_sync_status.replace('_', ' ') or 'available' }}</strong>.
+        <a href="{{ active_sync_job_url }}">Open active sync status</a>.
+      </p>
+    </section>
+  {% endif %}
 
-    <form action="{{ url_for('web.review') }}" method="post" enctype="multipart/form-data" class="stack">
-      <label>
-        <span>Playlist file</span>
-        <input type="file" name="playlist_file" accept=".m3u,.m3u8,.jspf,.json">
-      </label>
+  <div class="tab-shell" data-tabset>
+    <div class="tab-list" role="tablist" aria-label="Import workflow">
+      <button type="button" class="tab-button is-active" data-tab-button="import" data-tab-default aria-selected="true">Import playlist</button>
+      <button type="button" class="tab-button" data-tab-button="sync-setup" aria-selected="false">Sync setup</button>
+    </div>
 
-      <label>
-        <span>Remote JSPF URL</span>
-        <input type="url" name="jspf_url" placeholder="https://listenbrainz.org/playlist/.../export/jspf">
-      </label>
+    <section class="card tab-panel is-active" data-tab-panel="import">
+      <h2>Import a playlist</h2>
+      <p>Upload a local <code>.m3u</code>, <code>.jspf</code>, or Navidrome missing-files <code>.csv</code>, or paste a ListenBrainz playlist/export URL for review.</p>
 
-      <button type="submit">Upload and review playlist</button>
-    </form>
-  </section>
+      <form action="{{ url_for('web.review') }}" method="post" enctype="multipart/form-data" class="stack">
+        <label>
+          <span>Playlist file</span>
+          <input type="file" name="playlist_file" accept=".m3u,.m3u8,.jspf,.json,.csv">
+        </label>
 
-  <section class="card muted">
-    <h3>Sync requirements</h3>
-    <ul>
-      <li>Point <code>OCTO_FIESTA_BASE_URL</code> at your Octo-Fiesta instance.</li>
-      <li>Set <code>OCTO_FIESTA_USERNAME</code> plus either <code>OCTO_FIESTA_PASSWORD</code> or token/salt auth.</li>
-      <li>Use Deezer in Octo-Fiesta for the intended download workflow.</li>
-    </ul>
-  </section>
+        {% if listenbrainz_ready %}
+          <label class="checkbox-row">
+            <input
+              type="checkbox"
+              id="show-imported-toggle"
+              {% if listenbrainz_show_imported %}checked{% endif %}
+            >
+            <span>Show already imported playlists</span>
+          </label>
+        {% endif %}
+
+        {% if listenbrainz_playlists %}
+          <label>
+            <span>Filter ListenBrainz playlists</span>
+            <input
+              id="listenbrainz-filter"
+              type="search"
+              placeholder="Search by title or source"
+              autocomplete="off"
+            >
+          </label>
+
+          <label>
+            <span>Choose a ListenBrainz playlist</span>
+            <select name="listenbrainz_playlist_id" id="listenbrainz_playlist_id" size="10">
+              <option value="">Use the URL field or configured default</option>
+              {% for playlist in listenbrainz_playlists %}
+                <option value="{{ playlist.playlist_id or playlist.jspf_url }}" {% if playlist.selected or playlist.playlist_id == selected_listenbrainz_playlist %}selected{% endif %}>
+                  [{{ playlist.source_label }}] {{ playlist.title }}{% if playlist.description %} — {{ playlist.description }}{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="help-text">
+            Showing {{ listenbrainz_playlists|length }}
+            {% if listenbrainz_show_imported %}total{% else %}not-yet-imported plus refreshable weekly targets{% endif %}
+            playlist(s) for <code>{{ listenbrainz_username }}</code>{% if listenbrainz_hidden_count and not listenbrainz_show_imported %};
+            {{ listenbrainz_hidden_count }} imported playlist(s) hidden{% endif %}.
+          </p>
+          <p class="help-text" id="listenbrainz-filter-status"></p>
+        {% elif listenbrainz_ready %}
+          <p class="help-text">
+            ListenBrainz is configured. Leave the URL blank to use the configured
+            <code>{{ listenbrainz_playlist_type }}</code> playlist source from <code>.env</code>
+            {% if listenbrainz_hidden_count %}; all discovered playlists are already imported and hidden{% endif %}.
+          </p>
+        {% endif %}
+
+        <label>
+          <span>ListenBrainz or JSPF URL</span>
+          <input type="url" name="jspf_url" value="{{ configured_jspf_url or '' }}" placeholder="https://listenbrainz.org/playlist/... or .../export/jspf">
+        </label>
+
+        {% if listenbrainz_error %}
+          <p class="help-text">Could not load ListenBrainz playlists: {{ listenbrainz_error }}</p>
+        {% endif %}
+
+        <button type="submit">Upload and review playlist</button>
+      </form>
+    </section>
+
+    <section class="card muted tab-panel" data-tab-panel="sync-setup" hidden>
+      <h3>Sync setup</h3>
+      <ul>
+        <li>Point <code>OCTO_FIESTA_BASE_URL</code> at your Octo-Fiesta instance.</li>
+        <li>Set <code>OCTO_FIESTA_USERNAME</code> plus either <code>OCTO_FIESTA_PASSWORD</code> or token/salt auth.</li>
+        <li>Use Deezer in Octo-Fiesta for the intended download workflow.</li>
+      </ul>
+    </section>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const filterInput = document.getElementById("listenbrainz-filter");
+      const playlistSelect = document.getElementById("listenbrainz_playlist_id");
+      const status = document.getElementById("listenbrainz-filter-status");
+      const showImportedToggle = document.getElementById("show-imported-toggle");
+
+      if (showImportedToggle) {
+        showImportedToggle.addEventListener("change", () => {
+          const url = new URL(window.location.href);
+          if (showImportedToggle.checked) {
+            url.searchParams.set("show_imported", "1");
+          } else {
+            url.searchParams.delete("show_imported");
+          }
+          window.location.assign(url.toString());
+        });
+      }
+
+      if (!filterInput || !playlistSelect) {
+        return;
+      }
+
+      const options = Array.from(playlistSelect.options);
+
+      const applyFilter = () => {
+        const term = filterInput.value.trim().toLowerCase();
+        let visibleCount = 0;
+        let firstVisibleValue = "";
+
+        for (const option of options) {
+          if (!option.value) {
+            option.hidden = false;
+            continue;
+          }
+
+          const matches = !term || option.text.toLowerCase().includes(term);
+          option.hidden = !matches;
+
+          if (matches) {
+            visibleCount += 1;
+            if (!firstVisibleValue) {
+              firstVisibleValue = option.value;
+            }
+          }
+        }
+
+        const selectedOption = playlistSelect.selectedOptions[0];
+        if (selectedOption && selectedOption.hidden) {
+          playlistSelect.value = firstVisibleValue || "";
+        }
+
+        if (status) {
+          status.textContent = term ? `Showing ${visibleCount} matching playlist(s).` : "";
+        }
+      };
+
+      filterInput.addEventListener("input", applyFilter);
+    });
+  </script>
 {% endblock %}

@@ -13,18 +13,19 @@ def parse_jspf(content: str | dict) -> list[PlaylistTrack]:
 
     tracks: list[PlaylistTrack] = []
     for item in items:
-        title = (item.get("title") or _title_from_identifier(item.get("identifier", ""))).strip()
+        identifier = _text_value(item.get("identifier"))
+        title = (_text_value(item.get("title")) or _title_from_identifier(identifier)).strip()
         if not title:
             continue
 
         tracks.append(
             PlaylistTrack(
                 title=title,
-                artist=(item.get("creator") or "").strip(),
-                album=(item.get("album") or "").strip(),
+                artist=_text_value(item.get("creator")).strip(),
+                album=_text_value(item.get("album")).strip(),
                 duration_seconds=_ms_to_seconds(item.get("duration")),
-                source=(item.get("identifier") or "").strip(),
-                extra={"annotation": item.get("annotation", "")},
+                source=identifier.strip(),
+                extra={"annotation": _text_value(item.get("annotation"))},
             )
         )
 
@@ -39,6 +40,32 @@ def _ms_to_seconds(value: object) -> int | None:
         return round(int(value) / 1000)
     except (TypeError, ValueError):
         return None
+
+
+def _text_value(value: object) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, int | float):
+        return str(value)
+
+    if isinstance(value, list):
+        for item in value:
+            text = _text_value(item)
+            if text:
+                return text
+        return ""
+
+    if isinstance(value, dict):
+        for key in ("value", "@value", "identifier", "id", "name", "title", "text"):
+            text = _text_value(value.get(key))
+            if text:
+                return text
+
+    return ""
 
 
 def _title_from_identifier(identifier: str) -> str:

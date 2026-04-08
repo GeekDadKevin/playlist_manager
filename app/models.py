@@ -21,6 +21,7 @@ class PlaylistTrack:
 class PlaylistUpload:
     source_kind: str
     original_name: str
+    playlist_name: str = ""
     stored_name: str = ""
     saved_path: str = ""
     remote_url: str = ""
@@ -34,6 +35,7 @@ class PlaylistUpload:
         return {
             "source_kind": self.source_kind,
             "original_name": self.original_name,
+            "playlist_name": self.playlist_name,
             "stored_name": self.stored_name,
             "saved_path": self.saved_path,
             "remote_url": self.remote_url,

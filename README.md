@@ -1,6 +1,6 @@
 # JSPF Converter / Octo Playlist Sync
 
-A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, or ListenBrainz-compatible sources, reviewing track metadata, and preparing Octo-Fiesta download handoff payloads for Navidrome workflows.
+A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, Navidrome missing-files `csv`, or ListenBrainz playlist sources, reviewing track metadata, and preparing Octo-Fiesta download handoff payloads for Navidrome workflows.
 
 ## Stack
 
@@ -19,7 +19,7 @@ uv sync --dev
 uv run ruff format .
 uv run ruff check .
 uv run pytest
-uv run flask --app app run --debug
+uv run python -m flask --app app run --debug
 ```
 
 Open <http://127.0.0.1:5000>.
@@ -36,7 +36,26 @@ Use the included one-command launchers:
 ./start.sh
 ```
 
-Both scripts run `uv sync --dev` and then start the app on `http://127.0.0.1:8000` by default.
+Both scripts run `uv sync --dev`, validate the current `.env`, and then start the single Flask app that serves both the web UI and the API on **`http://127.0.0.1:3000` only**. If a variable is invalid, startup stops immediately and prints the exact variable name(s) that need fixing. Re-running either script reads `.app.lock`, stops the previously started app process, clears any stale listener on port `3000`, and writes the new PID back to that lock file.
+
+### ListenBrainz playlist configuration
+
+To import ListenBrainz playlists directly or auto-pull the latest "Created For You" playlist, set these optional values in `.env`:
+
+```env
+LISTENBRAINZ_API_BASE_URL=https://api.listenbrainz.org
+LISTENBRAINZ_USERNAME=your_listenbrainz_username
+LISTENBRAINZ_AUTH_TOKEN=your_token_if_needed
+LISTENBRAINZ_PLAYLIST_TYPE=createdfor
+LISTENBRAINZ_PLAYLIST_ID=
+LISTENBRAINZ_JSPF_URL=
+```
+
+- Set `LISTENBRAINZ_USERNAME` to let the UI load both `createdfor` and your own ListenBrainz playlists into a chooser.
+- Use `LISTENBRAINZ_PLAYLIST_ID` to pin a specific playlist UUID by default.
+- Use `LISTENBRAINZ_JSPF_URL` only if you want to override the API lookup with a direct export URL.
+- In the browser UI, you can now pick which ListenBrainz playlist to import before clicking **Upload and review playlist**.
+- On the review screen, you can either **Create/update Navidrome playlist now** or trigger the Octo-Fiesta sync job.
 
 ### Octo-Fiesta sync configuration
 
@@ -63,7 +82,16 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open <http://127.0.0.1:8000>.
+Open <http://127.0.0.1:3000>.
+
+If you want the app to write `.m3u` playlists directly into the folder Navidrome watches, set these values in `.env` before starting Compose:
+
+```env
+NAVIDROME_PLAYLISTS_DIR=/app/data/navidrome_playlists
+NAVIDROME_PLAYLISTS_DIR_HOST=/absolute/path/on/your/docker-host/navidrome/playlists
+```
+
+The Compose file now mounts that host directory into the container. When a sync completes, the app writes a Navidrome-compatible playlist there, and recurring daily/weekly playlist names are normalized to stable filenames so new runs overwrite the previous update instead of piling up dated duplicates. Missing tracks are kept listed in the exported playlist while Octo-Fiesta works on filling them in.
 
 ## Project layout
 

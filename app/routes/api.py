@@ -6,6 +6,7 @@ from flask.typing import ResponseReturnValue
 from app.matching import build_search_queries, rank_candidates
 from app.models import PlaylistTrack
 from app.services.ingest import load_saved_playlist, parse_uploaded_playlist, save_uploaded_playlist
+from app.services.navidrome_playlists import export_navidrome_playlist
 from app.services.octo_fiesta import OctoFiestaService
 
 api_bp = Blueprint("api", __name__)
@@ -98,8 +99,26 @@ def sync_playlist() -> ResponseReturnValue:
         return {"error": str(exc)}, 400
 
     response = dict(sync_result)
+    playlist_name = payload.get("playlist_name", "playlist")
     if upload_result is not None:
+        playlist_name = upload_result.playlist_name or upload_result.original_name
         response["upload"] = upload_result.to_dict()
+
+    navidrome_playlists_dir = str(current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip()
+    if navidrome_playlists_dir:
+        try:
+            response["playlist_export"] = export_navidrome_playlist(
+                playlist_dir=navidrome_playlists_dir,
+                playlist_name=playlist_name,
+                sync_results=response.get("results", []),
+            )
+        except Exception as exc:
+            response["playlist_export"] = {
+                "configured": True,
+                "written": False,
+                "playlist_name": playlist_name,
+                "reason": str(exc),
+            }
     return response, 200
 
 
