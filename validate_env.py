@@ -1,24 +1,12 @@
 from __future__ import annotations
 
 import os
-import re
 import sys
 from collections.abc import Mapping
 from urllib.parse import urlparse
 
 _ALLOWED_FLASK_ENVS = {"development", "production", "testing"}
-_ALLOWED_HANDOFF_MODES = {"preview", "download"}
-_ALLOWED_PLAYLIST_TYPES = {
-    "createdfor",
-    "created-for-you",
-    "created_for_you",
-    "user",
-    "playlists",
-}
-_UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-_VERSION_RE = re.compile(r"^\d+(?:\.\d+)+$")
+_ALLOWED_DEEZER_QUALITIES = {"FLAC", "MP3_320", "MP3_128"}
 
 
 def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
@@ -38,7 +26,7 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
 
     _validate_float(
         values,
-        "OCTO_FIESTA_MATCH_THRESHOLD",
+        "DEEZER_MATCH_THRESHOLD",
         errors,
         default="72",
         minimum=0.0,
@@ -47,64 +35,29 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
 
     for name, default in (
         ("DATA_DIR", "/app/data"),
-        ("UPLOAD_FOLDER", "/app/data/uploads"),
         ("NAVIDROME_PLAYLISTS_DIR", "/app/data/navidrome_playlists"),
+        ("DEEZER_DOWNLOAD_DIR", "/app/downloads"),
     ):
         if not _get_value(values, name, default):
             errors.append(f"{name} cannot be empty.")
 
     for name in (
         "LISTENBRAINZ_API_BASE_URL",
-        "LISTENBRAINZ_JSPF_URL",
-        "OCTO_FIESTA_BASE_URL",
         "NAVIDROME_BASE_URL",
     ):
         value = _get_value(values, name)
         if value and not _is_http_url(value):
             errors.append(f"{name} must be a valid http:// or https:// URL.")
 
-    playlist_type = _get_value(values, "LISTENBRAINZ_PLAYLIST_TYPE", "createdfor").lower()
-    if playlist_type not in _ALLOWED_PLAYLIST_TYPES:
-        errors.append("LISTENBRAINZ_PLAYLIST_TYPE must be one of: createdfor, user, playlists.")
+    deezer_quality = _get_value(values, "DEEZER_QUALITY", "FLAC").upper()
+    if deezer_quality not in _ALLOWED_DEEZER_QUALITIES:
+        allowed = ", ".join(sorted(_ALLOWED_DEEZER_QUALITIES))
+        errors.append(f"DEEZER_QUALITY must be one of: {allowed}.")
 
-    playlist_id = _get_value(values, "LISTENBRAINZ_PLAYLIST_ID")
-    if playlist_id and not (_UUID_RE.fullmatch(playlist_id) or "/playlist/" in playlist_id):
-        errors.append(
-            "LISTENBRAINZ_PLAYLIST_ID must be a playlist UUID or a ListenBrainz playlist URL."
-        )
-
-    handoff_mode = _get_value(values, "OCTO_FIESTA_HANDOFF_MODE", "preview").lower()
-    if handoff_mode not in _ALLOWED_HANDOFF_MODES:
-        errors.append("OCTO_FIESTA_HANDOFF_MODE must be either 'preview' or 'download'.")
-
-    api_version = _get_value(values, "OCTO_FIESTA_API_VERSION", "1.16.1")
-    if api_version and not _VERSION_RE.fullmatch(api_version):
-        errors.append("OCTO_FIESTA_API_VERSION must look like a version string such as 1.16.1.")
-
-    octo_base_url = _get_value(values, "OCTO_FIESTA_BASE_URL")
-    octo_username = _get_value(values, "OCTO_FIESTA_USERNAME")
-    octo_password = _get_value(values, "OCTO_FIESTA_PASSWORD")
-    octo_token = _get_value(values, "OCTO_FIESTA_TOKEN")
-    octo_salt = _get_value(values, "OCTO_FIESTA_SALT")
-
-    octo_configured = any([octo_base_url, octo_username, octo_password, octo_token, octo_salt])
-    if octo_configured:
-        if not octo_base_url:
-            errors.append(
-                "OCTO_FIESTA_BASE_URL is required when Octo-Fiesta integration is configured."
-            )
-        if not octo_username:
-            errors.append(
-                "OCTO_FIESTA_USERNAME is required when Octo-Fiesta integration is configured."
-            )
-        if octo_token and not octo_salt:
-            errors.append("OCTO_FIESTA_SALT is required when OCTO_FIESTA_TOKEN is set.")
-        if octo_salt and not octo_token:
-            errors.append("OCTO_FIESTA_TOKEN is required when OCTO_FIESTA_SALT is set.")
-        if not octo_password and not (octo_token and octo_salt):
-            errors.append(
-                "Set OCTO_FIESTA_PASSWORD, or both OCTO_FIESTA_TOKEN and OCTO_FIESTA_SALT."
-            )
+    deezer_arl = _get_value(values, "DEEZER_ARL")
+    deezer_download_dir = _get_value(values, "DEEZER_DOWNLOAD_DIR", "/app/downloads")
+    if deezer_arl and not deezer_download_dir:
+        errors.append("DEEZER_DOWNLOAD_DIR is required when DEEZER_ARL is set.")
 
     return errors
 

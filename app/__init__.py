@@ -1,11 +1,35 @@
 from __future__ import annotations
 
+import logging
+import logging.handlers
 from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+
+
+def _configure_logging(data_dir: str) -> None:
+    log_path = Path(data_dir) / "app.log"
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
+        root.setLevel(logging.DEBUG)
+        root.addHandler(file_handler)
+
+    # Silence noisy third-party loggers
+    for noisy in ("httpx", "httpcore", "werkzeug"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def create_app(config_class: type[object] | None = None) -> Flask:
@@ -26,6 +50,8 @@ def create_app(config_class: type[object] | None = None) -> Flask:
     Path(app.config["NAVIDROME_PLAYLISTS_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["SETTINGS_FILE"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["PLAYLIST_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
+
+    _configure_logging(app.config["DATA_DIR"])
 
     from .routes.api import api_bp
     from .routes.web import web_bp

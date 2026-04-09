@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from app import create_app
-from app.services.playlist_history import init_playlist_history, record_playlist_run
+from app.services.playlist_history import (
+    export_playlist_from_history,
+    init_playlist_history,
+    record_playlist_run,
+)
 
 
 def test_settings_page_lists_tracked_playlists_and_stats(tmp_path) -> None:
@@ -139,7 +143,7 @@ def test_reexport_playlist_from_history_to_navidrome_dir(tmp_path) -> None:
         },
         export_result={
             "written": True,
-            "target_path": str(tmp_path / "navidrome" / "weekly-jams.m3u"),
+            "target_path": str(tmp_path / "navidrome" / "Weekly Jams.m3u"),
             "entry_count": 1,
             "playable_count": 1,
             "missing_count": 0,
@@ -155,4 +159,92 @@ def test_reexport_playlist_from_history_to_navidrome_dir(tmp_path) -> None:
 
     assert response.status_code == 200
     assert b"Navidrome playlist updated" in response.data
-    assert (tmp_path / "navidrome" / "weekly-jams.m3u").exists()
+    assert (tmp_path / "navidrome" / "Weekly Jams.m3u").exists()
+
+
+def test_playlist_history_reuses_saved_local_path_for_reexport(tmp_path) -> None:
+    db_path = tmp_path / "playlist_history.db"
+    playlist_dir = tmp_path / "navidrome"
+    init_playlist_history(db_path)
+
+    record_playlist_run(
+        db_path,
+        playlist_name="Library cache",
+        source_kind="manual",
+        original_name="library-cache.m3u",
+        saved_path="memory://library-cache",
+        sync_result={
+            "summary": {"requested": 1, "processed": 1, "already_available": 1},
+            "results": [
+                {
+                    "status": "already_available",
+                    "track": {
+                        "title": "Hail to the King",
+                        "artist": "Avenged Sevenfold",
+                        "album": "Hail to the King",
+                        "source": (
+                            "/app/downloads/Avenged Sevenfold/"
+                            "Hail to the King/02 - Hail to the King.flac"
+                        ),
+                    },
+                    "resolved_match": {
+                        "path": (
+                            "/app/downloads/Avenged Sevenfold/"
+                            "Hail to the King/02 - Hail to the King.flac"
+                        )
+                    },
+                    "match": {"id": "local-song-1", "provider": "navidrome", "score": 99},
+                }
+            ],
+        },
+        export_result={
+            "written": True,
+            "target_path": str(playlist_dir / "library-cache.m3u"),
+            "entry_count": 1,
+            "playable_count": 1,
+            "missing_count": 0,
+        },
+    )
+
+    run_id = record_playlist_run(
+        db_path,
+        playlist_name="Weekly Exploration for geekdadkevin, week of 2026-04-06 Mon",
+        source_kind="remote-jspf",
+        original_name="listenbrainz.jspf",
+        remote_url="https://listenbrainz.org/playlist/11111111-1111-1111-1111-111111111111/export/jspf",
+        saved_path="memory://weekly-exploration",
+        sync_result={
+            "summary": {"requested": 1, "processed": 1, "downloaded": 1},
+            "results": [
+                {
+                    "status": "downloaded",
+                    "track": {
+                        "title": "Hail to the King",
+                        "artist": "Avenged Sevenfold",
+                        "album": "Hail to the King",
+                        "source": "https://musicbrainz.org/recording/hail-to-the-king",
+                    },
+                    "match": {"id": "ext-deezer-song-12345", "provider": "deezer", "score": 98},
+                }
+            ],
+        },
+        export_result={
+            "written": True,
+            "target_path": str(playlist_dir / "Weekly Exploration.m3u"),
+            "entry_count": 1,
+            "playable_count": 1,
+            "missing_count": 0,
+        },
+    )
+
+    export_result = export_playlist_from_history(
+        db_path,
+        run_id=run_id,
+        playlist_dir=playlist_dir,
+    )
+
+    assert export_result["written"] is True
+    assert export_result["missing_count"] == 0
+
+    written = (playlist_dir / "Weekly Exploration.m3u").read_text(encoding="utf-8")
+    assert "../Avenged Sevenfold/Hail to the King/02 - Hail to the King.flac" in written

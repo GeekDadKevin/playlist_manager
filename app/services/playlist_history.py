@@ -9,6 +9,7 @@ from typing import Any
 
 from werkzeug.utils import secure_filename
 
+from app.services.listenbrainz import extract_listenbrainz_playlist_id
 from app.services.navidrome_playlists import export_navidrome_playlist
 
 _BRACKET_PREFIX_RE = re.compile(r"^\s*\[[^\]]+\]\s*")
@@ -165,17 +166,26 @@ def record_playlist_run(
             match = item.get("match") if isinstance(item, dict) else {}
             resolved_match = item.get("resolved_match") if isinstance(item, dict) else {}
 
+            track_title = _text_value(track.get("title")) if isinstance(track, dict) else ""
+            track_artist = _text_value(track.get("artist")) if isinstance(track, dict) else ""
+            track_album = _text_value(track.get("album")) if isinstance(track, dict) else ""
             track_source = _text_value(track.get("source")) if isinstance(track, dict) else ""
-            local_path = _first_non_empty(
-                _text_value(resolved_match.get("path")) if isinstance(resolved_match, dict) else "",
-                _text_value(match.get("path")) if isinstance(match, dict) else "",
-                track_source if _looks_like_local_media(track_source) else "",
-            )
             match_id = _text_value(match.get("id")) if isinstance(match, dict) else ""
             provider = _text_value(match.get("provider")) if isinstance(match, dict) else ""
             deezer_id = match_id if match_id.startswith("ext-deezer-") else ""
             score = match.get("score") if isinstance(match, dict) else None
             status = _text_value(item.get("status")) if isinstance(item, dict) else ""
+            local_path = _first_non_empty(
+                _text_value(resolved_match.get("path")) if isinstance(resolved_match, dict) else "",
+                _text_value(match.get("path")) if isinstance(match, dict) else "",
+            )
+            if not local_path and status in {"already_available", "downloaded"}:
+                local_path = _find_previous_local_path(
+                    conn,
+                    title=track_title,
+                    artist=track_artist,
+                    album=track_album,
+                )
             if not status:
                 status = "already_available" if local_path else "not_found"
 
@@ -202,9 +212,9 @@ def record_playlist_run(
                 (
                     run_id,
                     position,
-                    _text_value(track.get("title")) if isinstance(track, dict) else "",
-                    _text_value(track.get("artist")) if isinstance(track, dict) else "",
-                    _text_value(track.get("album")) if isinstance(track, dict) else "",
+                    track_title,
+                    track_artist,
+                    track_album,
                     _int_value(track.get("duration_seconds")) if isinstance(track, dict) else None,
                     track_source,
                     status,
@@ -250,6 +260,22 @@ def list_tracked_playlists(db_path: str | Path, limit: int = 25) -> list[dict[st
         item["filename"] = f"{item['playlist_stem']}.m3u"
         playlists.append(item)
     return playlists
+
+
+def find_recorded_listenbrainz_playlist_ids(db_path: str | Path) -> set[str]:
+    init_playlist_history(db_path)
+
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT remote_url FROM playlist_runs WHERE TRIM(remote_url) != ''"
+        ).fetchall()
+
+    playlist_ids: set[str] = set()
+    for row in rows:
+        playlist_id = extract_listenbrainz_playlist_id(str(row["remote_url"]))
+        if playlist_id:
+            playlist_ids.add(playlist_id.lower())
+    return playlist_ids
 
 
 def get_playlist_stats(db_path: str | Path) -> dict[str, Any]:
@@ -384,8 +410,46 @@ def _build_playlist_stem(playlist_name: str) -> str:
     if is_recurring:
         cleaned_name = _RECURRING_DATE_RE.sub("", cleaned_name).strip(" ,-_")
         cleaned_name = _RECURRING_FOR_RE.sub("", cleaned_name).strip(" ,-_")
+        return _safe_recurring_filename(cleaned_name)
 
     return secure_filename(cleaned_name).replace("_", "-").strip(".-").lower() or "playlist"
+
+
+def _safe_recurring_filename(value: str) -> str:
+    sanitized = re.sub(r'[<>:"/\\|?*]+', ' ', value)
+    sanitized = re.sub(r'\s+', ' ', sanitized).strip(' .-_')
+    if sanitized and sanitized == sanitized.lower():
+        sanitized = sanitized.title()
+    return sanitized or "Playlist"
+
+
+def _find_previous_local_path(
+    conn: sqlite3.Connection,
+    *,
+    title: str,
+    artist: str,
+    album: str,
+) -> str:
+    normalized_title = title.casefold().strip()
+    normalized_artist = artist.casefold().strip()
+    normalized_album = album.casefold().strip()
+    if not normalized_title or not normalized_artist:
+        return ""
+
+    row = conn.execute(
+        """
+        SELECT local_path
+        FROM playlist_tracks
+        WHERE TRIM(local_path) != ''
+          AND LOWER(TRIM(title)) = ?
+          AND LOWER(TRIM(artist)) = ?
+          AND (? = '' OR LOWER(TRIM(album)) = ? OR TRIM(album) = '')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (normalized_title, normalized_artist, normalized_album, normalized_album),
+    ).fetchone()
+    return _text_value(row["local_path"]) if row is not None else ""
 
 
 def _completion_percent(summary: dict[str, Any]) -> int:

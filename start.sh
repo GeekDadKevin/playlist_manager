@@ -37,7 +37,7 @@ fi
 if [[ -f "$LOCK_FILE" ]]; then
   EXISTING_PID="$(head -n 1 "$LOCK_FILE" | tr -d '[:space:]')"
   if [[ "$EXISTING_PID" =~ ^[0-9]+$ ]] && kill -0 "$EXISTING_PID" 2>/dev/null; then
-    echo "Stopping previous Octo Playlist Sync process (PID $EXISTING_PID)..."
+    echo "Stopping previous Playlist Sync process (PID $EXISTING_PID)..."
     kill "$EXISTING_PID" 2>/dev/null || true
     for _ in 1 2 3 4 5; do
       if ! kill -0 "$EXISTING_PID" 2>/dev/null; then
@@ -105,7 +105,7 @@ if command -v lsof >/dev/null 2>&1; then
   fi
 fi
 
-echo "Starting Octo Playlist Sync UI + API on http://127.0.0.1:$PORT"
+echo "Starting Playlist Sync UI + API on http://127.0.0.1:$PORT"
 
 if [[ "$MODE" == "prod" ]]; then
   uv run python -m waitress --host=0.0.0.0 --port="$PORT" app:app &
@@ -115,6 +115,6 @@ fi
 
 APP_PID=$!
 echo "$APP_PID" > "$LOCK_FILE"
-echo "Octo Playlist Sync started with PID $APP_PID. Lock file: $LOCK_FILE"
+echo "Playlist Sync started with PID $APP_PID. Lock file: $LOCK_FILE"
 echo "Open http://127.0.0.1:$PORT/"
 wait "$APP_PID"

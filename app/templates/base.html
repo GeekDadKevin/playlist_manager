@@ -3,20 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Octo Playlist Sync{% endblock %}</title>
+    <title>{% block title %}Playlist Sync{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   </head>
   <body>
     <header class="site-header">
       <div>
-        <h1><a href="{{ url_for('web.index') }}">Octo Playlist Sync</a></h1>
+        <h1><a href="{{ url_for('web.index') }}">Playlist Sync</a></h1>
         <nav class="app-tabs" aria-label="App sections">
           <a class="app-tab {% if request.endpoint == 'web.index' %}is-active{% endif %}" href="{{ url_for('web.index') }}">Import</a>
-          {% if active_review_url %}
-            <a class="app-tab {% if request.endpoint == 'web.review_page' %}is-active{% endif %}" href="{{ active_review_url }}">Review</a>
-          {% else %}
-            <span class="app-tab is-disabled">Review</span>
-          {% endif %}
           {% if active_sync_job_url %}
             <a class="app-tab {% if request.endpoint == 'web.sync_status_page' %}is-active{% endif %}" href="{{ active_sync_job_url }}">
               Sync status{% if active_sync_status %} · {{ active_sync_status.replace('_', ' ')|title }}{% endif %}
@@ -26,6 +21,7 @@
           {% endif %}
           <a class="app-tab {% if request.endpoint == 'web.stats_page' %}is-active{% endif %}" href="{{ url_for('web.stats_page') }}">Stats</a>
           <a class="app-tab {% if request.endpoint == 'web.settings_page' %}is-active{% endif %}" href="{{ url_for('web.settings_page') }}">Settings</a>
+          <a class="app-tab {% if request.endpoint == 'web.logs_page' %}is-active{% endif %}" href="{{ url_for('web.logs_page') }}">Logs</a>
         </nav>
       </div>
     </header>

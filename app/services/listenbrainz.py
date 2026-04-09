@@ -87,12 +87,10 @@ class ListenBrainzService:
             base_url=str(config.get("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")),
             username=str(config.get("LISTENBRAINZ_USERNAME", "")),
             auth_token=str(config.get("LISTENBRAINZ_AUTH_TOKEN", "")),
-            playlist_type=str(config.get("LISTENBRAINZ_PLAYLIST_TYPE", "createdfor")),
-            playlist_id=str(config.get("LISTENBRAINZ_PLAYLIST_ID", "")),
         )
 
     def is_configured(self) -> bool:
-        return bool(self.username or self.playlist_id)
+        return bool(self.username)
 
     def list_playlists(
         self,
@@ -146,8 +144,7 @@ class ListenBrainzService:
             return normalize_listenbrainz_url(self.playlist_id)
         if not self.username:
             raise ValueError(
-                "Set `LISTENBRAINZ_JSPF_URL`, `LISTENBRAINZ_PLAYLIST_ID`, "
-                "or `LISTENBRAINZ_USERNAME`."
+                "Provide a ListenBrainz playlist URL/ID, or set `LISTENBRAINZ_USERNAME`."
             )
 
         playlist = self._fetch_first_playlist()
@@ -189,8 +186,7 @@ class ListenBrainzService:
 
         if not self.username:
             raise ValueError(
-                "Set `LISTENBRAINZ_JSPF_URL`, `LISTENBRAINZ_PLAYLIST_ID`, "
-                "or `LISTENBRAINZ_USERNAME`."
+                "Provide a ListenBrainz playlist URL/ID, or set `LISTENBRAINZ_USERNAME`."
             )
 
         playlist = self._fetch_first_playlist()

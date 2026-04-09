@@ -5,9 +5,9 @@ from flask.typing import ResponseReturnValue
 
 from app.matching import build_search_queries, rank_candidates
 from app.models import PlaylistTrack
+from app.services.deezer_download import DeezerDownloadService
 from app.services.ingest import load_saved_playlist, parse_uploaded_playlist, save_uploaded_playlist
 from app.services.navidrome_playlists import export_navidrome_playlist
-from app.services.octo_fiesta import OctoFiestaService
 
 api_bp = Blueprint("api", __name__)
 
@@ -92,9 +92,9 @@ def sync_playlist() -> ResponseReturnValue:
     else:
         return {"error": "Provide a saved path, uploaded file, or a list of tracks to sync."}, 400
 
-    octo = OctoFiestaService.from_config(current_app.config)
+    downloader = DeezerDownloadService.from_config(current_app.config)
     try:
-        sync_result = octo.sync_tracks(tracks, max_tracks=payload.get("max_tracks"))
+        sync_result = downloader.sync_tracks(tracks, max_tracks=payload.get("max_tracks"))
     except Exception as exc:
         return {"error": str(exc)}, 400
 
@@ -136,9 +136,9 @@ def match_preview() -> ResponseReturnValue:
     if candidates:
         ranked = rank_candidates(track, candidates)
     else:
-        octo = OctoFiestaService.from_config(current_app.config)
+        downloader = DeezerDownloadService.from_config(current_app.config)
         try:
-            ranked = octo.search_track(track)
+            ranked = downloader.search_track(track)
         except Exception as exc:
             return {"error": str(exc), "queries": build_search_queries(track), "ranked": []}, 400
 
@@ -146,17 +146,3 @@ def match_preview() -> ResponseReturnValue:
         "queries": build_search_queries(track),
         "ranked": ranked,
     }, 200
-
-
-@api_bp.post("/octo/handoff/preview")
-def octo_handoff_preview() -> ResponseReturnValue:
-    payload = request.get_json(silent=True) or {}
-    track = PlaylistTrack(
-        title=payload.get("title", ""),
-        artist=payload.get("artist", ""),
-        album=payload.get("album", ""),
-        duration_seconds=payload.get("duration_seconds"),
-    )
-    octo = OctoFiestaService.from_config(current_app.config)
-
-    return octo.build_handoff_payload(track, payload.get("deezer_match")), 200

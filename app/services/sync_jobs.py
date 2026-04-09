@@ -6,9 +6,11 @@ from typing import Any
 from uuid import uuid4
 
 from app.models import PlaylistUpload
+from app.services.deezer_download import DeezerDownloadService, _utc_timestamp
 from app.services.navidrome_playlists import export_navidrome_playlist
-from app.services.octo_fiesta import OctoFiestaService, _utc_timestamp
 from app.services.playlist_history import record_playlist_run
+
+SyncService = DeezerDownloadService
 
 _JOBS: dict[str, dict[str, Any]] = {}
 _JOBS_LOCK = Lock()
@@ -56,7 +58,7 @@ def create_sync_job(upload: PlaylistUpload, max_tracks: int) -> str:
 
 def start_sync_job(
     upload: PlaylistUpload,
-    octo: OctoFiestaService,
+    service: SyncService,
     max_tracks: int,
     navidrome_playlists_dir: str = "",
     playlist_db_path: str = "",
@@ -64,7 +66,7 @@ def start_sync_job(
     job_id = create_sync_job(upload, max_tracks)
     worker = Thread(
         target=_run_sync_job,
-        args=(job_id, upload, octo, max_tracks, navidrome_playlists_dir, playlist_db_path),
+        args=(job_id, upload, service, max_tracks, navidrome_playlists_dir, playlist_db_path),
         daemon=True,
         name=f"sync-job-{job_id[:8]}",
     )
@@ -81,7 +83,7 @@ def get_sync_job(job_id: str) -> dict[str, Any] | None:
 def _run_sync_job(
     job_id: str,
     upload: PlaylistUpload,
-    octo: OctoFiestaService,
+    service: SyncService,
     max_tracks: int,
     navidrome_playlists_dir: str,
     playlist_db_path: str,
@@ -95,7 +97,7 @@ def _run_sync_job(
     )
 
     try:
-        final_result = octo.sync_tracks(
+        final_result = service.sync_tracks(
             upload.tracks,
             max_tracks=max_tracks,
             progress_callback=lambda snapshot: _update_progress(job_id, snapshot),

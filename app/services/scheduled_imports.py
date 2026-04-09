@@ -7,10 +7,10 @@ from typing import Any
 import httpx
 from flask import Flask
 
+from app.services.deezer_download import DeezerDownloadService
 from app.services.ingest import fetch_remote_jspf
 from app.services.listenbrainz import ListenBrainzService
 from app.services.navidrome_playlists import export_navidrome_playlist
-from app.services.octo_fiesta import OctoFiestaService
 from app.services.playlist_history import record_playlist_run
 from app.services.settings_store import (
     current_schedule_key,
@@ -80,11 +80,11 @@ def run_scheduled_playlists(
                 "No matching ListenBrainz weekly playlists were found for the configured targets."
             )
 
-        octo = OctoFiestaService.from_config(config)
+        downloader = DeezerDownloadService.from_config(config)
         navidrome_dir = str(config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip()
         upload_folder = str(config.get("UPLOAD_FOLDER", "")).strip()
         max_tracks = int(config.get("SYNC_MAX_TRACKS", 100))
-        sync_with_octo = bool(active_settings.get("sync_with_octo"))
+        sync_with_downloads = bool(active_settings.get("sync_with_downloads"))
 
         playlist_db_path = str(config.get("PLAYLIST_DB_PATH", "")).strip()
         run_results: list[dict[str, Any]] = []
@@ -102,11 +102,11 @@ def run_scheduled_playlists(
             sync_results = [{"track": track.to_dict(), "match": {}} for track in upload.tracks]
             sync_snapshot: dict[str, Any] = {"summary": {}, "results": sync_results}
 
-            if sync_with_octo and octo.is_configured():
-                octo_result = octo.sync_tracks(upload.tracks, max_tracks=max_tracks)
-                sync_results = octo_result.get("results", sync_results)
-                sync_snapshot = octo_result
-                sync_mode = "octo-sync"
+            if sync_with_downloads and downloader.is_configured():
+                download_result = downloader.sync_tracks(upload.tracks, max_tracks=max_tracks)
+                sync_results = download_result.get("results", sync_results)
+                sync_snapshot = download_result
+                sync_mode = "download-sync"
 
             if navidrome_dir:
                 export_result = export_navidrome_playlist(

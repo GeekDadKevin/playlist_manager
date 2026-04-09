@@ -1,6 +1,6 @@
-# JSPF Converter / Octo Playlist Sync
+# JSPF Converter / Playlist Sync
 
-A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, Navidrome missing-files `csv`, or ListenBrainz playlist sources, reviewing track metadata, and preparing Octo-Fiesta download handoff payloads for Navidrome workflows.
+A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, Navidrome missing-files `csv`, or ListenBrainz playlist sources, reviewing track metadata, downloading missing tracks directly from Deezer, and writing Navidrome-friendly playlist files.
 
 ## Stack
 
@@ -40,40 +40,30 @@ Both scripts run `uv sync --dev`, validate the current `.env`, and then start th
 
 ### ListenBrainz playlist configuration
 
-To import ListenBrainz playlists directly or auto-pull the latest "Created For You" playlist, set these optional values in `.env`:
+To import ListenBrainz playlists through the browser chooser, set these optional values in `.env`:
 
 ```env
 LISTENBRAINZ_API_BASE_URL=https://api.listenbrainz.org
 LISTENBRAINZ_USERNAME=your_listenbrainz_username
 LISTENBRAINZ_AUTH_TOKEN=your_token_if_needed
-LISTENBRAINZ_PLAYLIST_TYPE=createdfor
-LISTENBRAINZ_PLAYLIST_ID=
-LISTENBRAINZ_JSPF_URL=
 ```
 
-- Set `LISTENBRAINZ_USERNAME` to let the UI load both `createdfor` and your own ListenBrainz playlists into a chooser.
-- Use `LISTENBRAINZ_PLAYLIST_ID` to pin a specific playlist UUID by default.
-- Use `LISTENBRAINZ_JSPF_URL` only if you want to override the API lookup with a direct export URL.
-- In the browser UI, you can now pick which ListenBrainz playlist to import before clicking **Upload and review playlist**.
-- On the review screen, you can either **Create/update Navidrome playlist now** or trigger the Octo-Fiesta sync job.
+- Set `LISTENBRAINZ_USERNAME` to let the UI load both `Created For You` and your own ListenBrainz playlists into the chooser.
+- You normally **do not need** playlist-type, playlist-ID, JSPF-URL, or upload-folder env overrides anymore; the UI picker and pasted URL field handle that workflow directly.
+- On the review screen, you can either **Create/update Navidrome playlist now** or start the live download sync job.
 
-### Octo-Fiesta sync configuration
+### Deezer sync configuration
 
 To enable real match-and-download sync, set these values in `.env`:
 
 ```env
-OCTO_FIESTA_BASE_URL=http://octo-fiesta:5274
-OCTO_FIESTA_USERNAME=your_navidrome_username
-OCTO_FIESTA_PASSWORD=your_navidrome_password_or_enc_value
-OCTO_FIESTA_PROVIDER=deezer
-OCTO_FIESTA_MATCH_THRESHOLD=72
+DEEZER_ARL=your_deezer_session_cookie
+DEEZER_DOWNLOAD_DIR=/app/downloads
+DEEZER_QUALITY=FLAC
+DEEZER_MATCH_THRESHOLD=72
 ```
 
-The app uses the documented Octo-Fiesta/Subsonic endpoints:
-- `GET /rest/search3` to search local + external matches
-- `GET /rest/stream?id=ext-deezer-song-...` to trigger downloads for missing tracks
-
-Sync is intentionally **sequential**: the app waits for each Octo-Fiesta stream/download to finish before moving to the next track, then records per-track completion feedback.
+Sync is intentionally **sequential**: the app waits for each Deezer download to finish before moving to the next track, then records per-track completion feedback.
 
 ### Docker Compose
 
@@ -89,9 +79,14 @@ If you want the app to write `.m3u` playlists directly into the folder Navidrome
 ```env
 NAVIDROME_PLAYLISTS_DIR=/app/data/navidrome_playlists
 NAVIDROME_PLAYLISTS_DIR_HOST=/absolute/path/on/your/docker-host/navidrome/playlists
+DEEZER_DOWNLOAD_DIR=/app/downloads
+NAVIDROME_MUSIC_ROOT=/path/on/your/docker-host/music/root
+NAVIDROME_M3U_PATH_PREFIX=..
 ```
 
-The Compose file now mounts that host directory into the container. When a sync completes, the app writes a Navidrome-compatible playlist there, and recurring daily/weekly playlist names are normalized to stable filenames so new runs overwrite the previous update instead of piling up dated duplicates. Missing tracks are kept listed in the exported playlist while Octo-Fiesta works on filling them in.
+The playlist exporter rewrites downloader paths such as `/app/downloads/Artist/Album/track.flac` into relative `.m3u` entries like `../Artist/Album/track.flac`, which is the format Navidrome expects when the playlist file lives inside a `playlists/` subfolder.
+
+The Compose file now mounts that host directory into the container. When a sync completes, the app writes a Navidrome-compatible playlist there, and recurring daily/weekly playlist names are normalized to stable filenames so new runs overwrite the previous update instead of piling up dated duplicates. Missing tracks are kept listed in the exported playlist while downloads are still pending.
 
 ## Project layout
 
@@ -100,12 +95,12 @@ app/
   matching/      Deezer-oriented normalization and ranking helpers
   parsers/       M3U and JSPF ingestion
   routes/        Web and API endpoints
-  services/      ListenBrainz and Octo-Fiesta workflow helpers
+  services/      ListenBrainz, download, and playlist workflow helpers
   templates/     Minimal review UI
 tests/           Parser, matching, and app smoke tests
 ```
 
 ## Notes
 
-- The real sync path is now wired to Octo-Fiesta's documented `search3` and `stream` endpoints.
+- The real sync path now uses the built-in Deezer search and download workflow.
 - Deezer search support is structured for balanced fuzzy matching, with low-confidence matches skipped instead of forced.

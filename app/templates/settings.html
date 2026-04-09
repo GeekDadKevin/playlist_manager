@@ -16,15 +16,27 @@
     <div class="settings-grid">
       <section class="card">
         <h3>Appearance</h3>
-        <label>
-          <span>Theme</span>
-          <select name="theme">
-            {% for value, label in theme_options %}
-              <option value="{{ value }}" {% if settings.theme == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <p class="help-text">Choose between the app’s dark theme, a light theme, or your system preference.</p>
+        <fieldset class="theme-picker">
+          <legend>Theme</legend>
+          {% for value, label in theme_options %}
+            <label class="theme-choice">
+              <input type="radio" name="theme" value="{{ value }}" {% if settings.theme == value %}checked{% endif %}>
+              <span class="theme-choice-card">
+                <span class="theme-choice-title">{{ label }}</span>
+                <span class="theme-choice-copy">
+                  {% if value == 'dark' %}
+                    Rich charcoal panels with brighter contrast for the main workflow.
+                  {% elif value == 'light' %}
+                    Clean light surfaces for daytime browsing and playlist review.
+                  {% else %}
+                    Match the operating system theme automatically.
+                  {% endif %}
+                </span>
+              </span>
+            </label>
+          {% endfor %}
+        </fieldset>
+        <p class="help-text">Your selection applies across the whole app after saving.</p>
       </section>
 
       <section class="card">
@@ -63,8 +75,8 @@
         </p>
 
         <label class="checkbox-row">
-          <input type="checkbox" name="sync_with_octo" {% if settings.sync_with_octo %}checked{% endif %}>
-          <span>Also run the Octo-Fiesta sync/download flow during scheduled imports</span>
+          <input type="checkbox" name="sync_with_downloads" {% if settings.sync_with_downloads %}checked{% endif %}>
+          <span>Also run the live download step during scheduled imports</span>
         </label>
 
         <ul class="summary-list compact-list">
@@ -96,7 +108,7 @@
     <article class="card stat-card">
       <h3>Downloaded</h3>
       <p class="stat-value">{{ stats_summary.total_downloaded }}</p>
-      <p class="help-text">Songs the tool asked Octo-Fiesta to fetch.</p>
+      <p class="help-text">Songs the tool downloaded directly during sync.</p>
     </article>
     <article class="card stat-card">
       <h3>Already had</h3>

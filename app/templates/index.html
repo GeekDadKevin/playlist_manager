@@ -16,12 +16,12 @@
   <div class="tab-shell" data-tabset>
     <div class="tab-list" role="tablist" aria-label="Import workflow">
       <button type="button" class="tab-button is-active" data-tab-button="import" data-tab-default aria-selected="true">Import playlist</button>
-      <button type="button" class="tab-button" data-tab-button="sync-setup" aria-selected="false">Sync setup</button>
+      <button type="button" class="tab-button" data-tab-button="sync-setup" aria-selected="false">How sync works</button>
     </div>
 
     <section class="card tab-panel is-active" data-tab-panel="import">
       <h2>Import a playlist</h2>
-      <p>Upload a local <code>.m3u</code>, <code>.jspf</code>, or Navidrome missing-files <code>.csv</code>, or paste a ListenBrainz playlist/export URL for review.</p>
+      <p>Upload a local <code>.m3u</code>, <code>.jspf</code>, or Navidrome missing-files <code>.csv</code>, or paste a ListenBrainz playlist/export URL to start the live sync immediately.</p>
 
       <form action="{{ url_for('web.review') }}" method="post" enctype="multipart/form-data" class="stack">
         <label>
@@ -38,6 +38,15 @@
             >
             <span>Show already imported playlists</span>
           </label>
+        {% endif %}
+
+        <label>
+          <span>ListenBrainz or JSPF URL</span>
+          <input type="url" name="jspf_url" value="{{ configured_jspf_url or '' }}" placeholder="https://listenbrainz.org/playlist/... or .../export/jspf">
+        </label>
+
+        {% if listenbrainz_error %}
+          <p class="help-text">Could not load ListenBrainz playlists: {{ listenbrainz_error }}</p>
         {% endif %}
 
         {% if listenbrainz_playlists %}
@@ -71,31 +80,28 @@
           <p class="help-text" id="listenbrainz-filter-status"></p>
         {% elif listenbrainz_ready %}
           <p class="help-text">
-            ListenBrainz is configured. Leave the URL blank to use the configured
-            <code>{{ listenbrainz_playlist_type }}</code> playlist source from <code>.env</code>
+            ListenBrainz is configured. Paste a playlist/export URL above, or use the chooser when playlists are available
             {% if listenbrainz_hidden_count %}; all discovered playlists are already imported and hidden{% endif %}.
           </p>
         {% endif %}
 
-        <label>
-          <span>ListenBrainz or JSPF URL</span>
-          <input type="url" name="jspf_url" value="{{ configured_jspf_url or '' }}" placeholder="https://listenbrainz.org/playlist/... or .../export/jspf">
-        </label>
-
-        {% if listenbrainz_error %}
-          <p class="help-text">Could not load ListenBrainz playlists: {{ listenbrainz_error }}</p>
-        {% endif %}
-
-        <button type="submit">Upload and review playlist</button>
+        <button type="submit">Import playlist and start sync</button>
+        <p class="help-text">Importing jumps straight to the live sync page, shows downloads vs already-available tracks, and then overwrites the matching Navidrome playlist file when the run finishes.</p>
       </form>
     </section>
 
     <section class="card muted tab-panel" data-tab-panel="sync-setup" hidden>
-      <h3>Sync setup</h3>
+      <h3>What sync setup does</h3>
+      <p>
+        This tab does not start anything by itself. It simply explains what the app needs before
+        the live sync step can match songs, download missing tracks directly from Deezer, and
+        then update the Navidrome playlist file for you.
+      </p>
       <ul>
-        <li>Point <code>OCTO_FIESTA_BASE_URL</code> at your Octo-Fiesta instance.</li>
-        <li>Set <code>OCTO_FIESTA_USERNAME</code> plus either <code>OCTO_FIESTA_PASSWORD</code> or token/salt auth.</li>
-        <li>Use Deezer in Octo-Fiesta for the intended download workflow.</li>
+        <li>Set <code>DEEZER_ARL</code> to a valid Deezer session cookie.</li>
+        <li>Point <code>DEEZER_DOWNLOAD_DIR</code> at the folder where new files should be saved.</li>
+        <li>Optionally tune <code>DEEZER_QUALITY</code> and <code>DEEZER_MATCH_THRESHOLD</code>.</li>
+        <li>Once configured, importing a playlist jumps straight to Sync status, triggers downloads, and refreshes the Navidrome playlist file automatically.</li>
       </ul>
     </section>
   </div>

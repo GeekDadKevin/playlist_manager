@@ -14,6 +14,7 @@ from app.services.listenbrainz import (
     extract_listenbrainz_playlist_id,
     normalize_listenbrainz_url,
 )
+from app.services.upload_cache import cache_upload, get_cached_upload
 
 SUPPORTED_EXTENSIONS = {".m3u", ".m3u8", ".jspf", ".json", ".csv"}
 
@@ -34,27 +35,33 @@ def parse_uploaded_playlist(filename: str, payload: bytes) -> list[PlaylistTrack
 def save_uploaded_playlist(
     upload_folder: str | Path, filename: str, payload: bytes
 ) -> PlaylistUpload:
+    _ = upload_folder
     tracks = parse_uploaded_playlist(filename, payload)
     playlist_name = _detect_playlist_name(filename, payload)
 
-    folder = Path(upload_folder)
-    folder.mkdir(parents=True, exist_ok=True)
-
     stored_name = _build_stored_filename(filename)
-    saved_path = folder / stored_name
-    saved_path.write_bytes(payload)
-
-    return PlaylistUpload(
+    upload = PlaylistUpload(
         source_kind="upload",
         original_name=filename,
         playlist_name=playlist_name,
         stored_name=stored_name,
-        saved_path=str(saved_path),
+        saved_path=f"memory://{stored_name}",
         tracks=tracks,
     )
+    return cache_upload(upload)
 
 
 def load_saved_playlist(upload_folder: str | Path, saved_path: str | Path) -> PlaylistUpload:
+    saved_path_text = str(saved_path).strip()
+    cached_upload = get_cached_upload(saved_path_text)
+    if cached_upload is not None:
+        return cached_upload
+    if saved_path_text.startswith("memory://"):
+        raise ValueError(
+            "This imported playlist is no longer in memory. Re-import it or use the tracked "
+            "playlist tools in Settings to export it again."
+        )
+
     base_folder = Path(upload_folder).resolve()
     target_path = Path(saved_path).resolve()
 
@@ -128,30 +135,38 @@ def fetch_remote_jspf(
             tracks = parse_jspf(text)
         remote_url = normalized_url
 
-    folder = Path(upload_folder)
-    folder.mkdir(parents=True, exist_ok=True)
-
+    _ = upload_folder
     stored_name = _build_stored_filename("listenbrainz.jspf")
-    saved_path = folder / stored_name
-    saved_path.write_text(text, encoding="utf-8")
-
-    return PlaylistUpload(
+    upload = PlaylistUpload(
         source_kind="remote-jspf",
         original_name="listenbrainz.jspf",
         playlist_name=_detect_playlist_name("listenbrainz.jspf", payload),
         stored_name=stored_name,
-        saved_path=str(saved_path),
+        saved_path=f"memory://{stored_name}",
         remote_url=remote_url,
         tracks=tracks,
     )
+    return cache_upload(upload)
 
 
-def find_imported_listenbrainz_playlist_ids(upload_folder: str | Path) -> set[str]:
+def find_imported_listenbrainz_playlist_ids(
+    upload_folder: str | Path,
+    playlist_db_path: str | Path | None = None,
+) -> set[str]:
+    imported_ids: set[str] = set()
+
+    if playlist_db_path:
+        try:
+            from app.services.playlist_history import find_recorded_listenbrainz_playlist_ids
+
+            imported_ids.update(find_recorded_listenbrainz_playlist_ids(playlist_db_path))
+        except Exception:
+            pass
+
     folder = Path(upload_folder)
     if not folder.exists():
-        return set()
+        return imported_ids
 
-    imported_ids: set[str] = set()
     for pattern in ("*.jspf", "*.json"):
         for candidate in folder.glob(pattern):
             try:

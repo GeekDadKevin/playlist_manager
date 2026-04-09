@@ -6,33 +6,28 @@ from validate_env import validate_environment
 
 
 def test_validate_environment_reports_specific_bad_variables(monkeypatch) -> None:
-    monkeypatch.setenv("OCTO_FIESTA_BASE_URL", "not-a-url")
-    monkeypatch.setenv("OCTO_FIESTA_HANDOFF_MODE", "explode")
-    monkeypatch.setenv("OCTO_FIESTA_USERNAME", "demo")
-    monkeypatch.delenv("OCTO_FIESTA_PASSWORD", raising=False)
-    monkeypatch.setenv("OCTO_FIESTA_TOKEN", "token-only")
-    monkeypatch.delenv("OCTO_FIESTA_SALT", raising=False)
+    monkeypatch.setenv("DEEZER_ARL", "demo-cookie")
+    monkeypatch.setenv("DEEZER_DOWNLOAD_DIR", "")
+    monkeypatch.setenv("DEEZER_QUALITY", "ULTRA-HD")
+    monkeypatch.setenv("DEEZER_MATCH_THRESHOLD", "101")
     monkeypatch.setenv("SYNC_MAX_TRACKS", "0")
 
     errors = validate_environment()
 
-    assert any("OCTO_FIESTA_BASE_URL" in error for error in errors)
-    assert any("OCTO_FIESTA_HANDOFF_MODE" in error for error in errors)
-    assert any("OCTO_FIESTA_SALT" in error for error in errors)
+    assert any("DEEZER_DOWNLOAD_DIR" in error for error in errors)
+    assert any("DEEZER_QUALITY" in error for error in errors)
+    assert any("DEEZER_MATCH_THRESHOLD" in error for error in errors)
     assert any("SYNC_MAX_TRACKS" in error for error in errors)
 
 
 def test_validate_environment_accepts_valid_core_settings(monkeypatch) -> None:
     monkeypatch.setenv("APP_PORT", "3000")
     monkeypatch.setenv("SYNC_MAX_TRACKS", "100")
-    monkeypatch.setenv("OCTO_FIESTA_BASE_URL", "http://example.com:5274")
-    monkeypatch.setenv("OCTO_FIESTA_HANDOFF_MODE", "download")
-    monkeypatch.setenv("OCTO_FIESTA_USERNAME", "demo")
-    monkeypatch.setenv("OCTO_FIESTA_PASSWORD", "secret")
-    monkeypatch.delenv("OCTO_FIESTA_TOKEN", raising=False)
-    monkeypatch.delenv("OCTO_FIESTA_SALT", raising=False)
+    monkeypatch.setenv("DEEZER_ARL", "demo-cookie")
+    monkeypatch.setenv("DEEZER_DOWNLOAD_DIR", "/tmp/downloads")
+    monkeypatch.setenv("DEEZER_QUALITY", "FLAC")
+    monkeypatch.setenv("DEEZER_MATCH_THRESHOLD", "72")
     monkeypatch.setenv("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")
-    monkeypatch.setenv("LISTENBRAINZ_PLAYLIST_TYPE", "createdfor")
 
     assert validate_environment() == []
 

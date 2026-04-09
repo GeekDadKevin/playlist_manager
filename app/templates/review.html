@@ -12,6 +12,7 @@
 
     <section class="card tab-panel is-active" data-tab-panel="summary">
       <h2>Review playlist</h2>
+      <p>This page is now a fallback/manual view. Normal imports jump straight to <strong>Sync status</strong> automatically.</p>
       <p><strong>{{ total_tracks }}</strong> tracks parsed{% if truncated %}; showing the first {{ tracks|length }} entries{% endif %}.</p>
 
       {% if upload %}
@@ -19,8 +20,8 @@
           <li><strong>Source:</strong> {{ upload.source_kind }}</li>
           <li><strong>Playlist name:</strong> <code>{{ upload.playlist_name or upload.original_name }}</code></li>
           <li><strong>Original name:</strong> <code>{{ upload.original_name }}</code></li>
-          <li><strong>Saved as:</strong> <code>{{ upload.stored_name }}</code></li>
-          <li><strong>Saved path:</strong> <code>{{ upload.saved_path }}</code></li>
+          <li><strong>Import token:</strong> <code>{{ upload.stored_name }}</code></li>
+          <li><strong>Cache reference:</strong> <code>{{ upload.saved_path }}</code></li>
           {% if upload.remote_url %}
             <li><strong>Remote URL:</strong> <code>{{ upload.remote_url }}</code></li>
           {% endif %}
@@ -42,14 +43,13 @@
           </label>
           <div class="action-row">
             <button type="submit" formaction="{{ url_for('web.export_playlist') }}">Create/update Navidrome playlist now</button>
-            <button type="submit" {% if not octo_configured %}disabled{% endif %}>Trigger Octo-Fiesta sync</button>
+            <button type="submit" {% if not download_configured %}disabled{% endif %}>Trigger live download sync</button>
           </div>
           <p class="help-text">
-            Use the first button to write the Navidrome playlist immediately from the current import.
-            Missing tracks stay listed while Octo-Fiesta fills them in, and recurring daily or weekly updates overwrite the prior file.
+            These are fallback/manual actions only. The normal import flow already starts the download sync automatically and overwrites the matching Navidrome playlist file when the run completes.
           </p>
-          {% if not octo_configured %}
-            <p>Set <code>OCTO_FIESTA_USERNAME</code> and password/token values in <code>.env</code> to enable real sync.</p>
+          {% if not download_configured %}
+            <p>Set <code>DEEZER_ARL</code> and <code>DEEZER_DOWNLOAD_DIR</code> in <code>.env</code> to enable live downloads.</p>
           {% endif %}
         </form>
       {% endif %}

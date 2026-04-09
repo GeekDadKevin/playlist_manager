@@ -27,6 +27,6 @@ repos:
 
       - id: pytest-fast-suite
         name: pytest fast suite
-        entry: uv run python -m pytest tests/test_app.py tests/test_parsers.py tests/test_matching.py tests/test_octo_fiesta.py tests/test_listenbrainz.py
+        entry: uv run python -m pytest tests/test_app.py tests/test_parsers.py tests/test_matching.py tests/test_deezer_download.py tests/test_listenbrainz.py
         language: system
         pass_filenames: false

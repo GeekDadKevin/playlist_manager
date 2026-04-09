@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import (
     Blueprint,
     current_app,
@@ -13,6 +15,7 @@ from flask import (
 from flask.typing import ResponseReturnValue
 
 from app.matching import build_search_queries
+from app.services.deezer_download import DeezerDownloadService
 from app.services.ingest import (
     fetch_remote_jspf,
     find_imported_listenbrainz_playlist_ids,
@@ -21,7 +24,6 @@ from app.services.ingest import (
 )
 from app.services.listenbrainz import ListenBrainzService
 from app.services.navidrome_playlists import export_navidrome_playlist
-from app.services.octo_fiesta import OctoFiestaService
 from app.services.playlist_history import (
     export_playlist_from_history,
     get_playlist_stats,
@@ -84,7 +86,8 @@ def index() -> str:
     app_settings = load_settings(current_app.config["SETTINGS_FILE"])
     playlist_targets = list(app_settings.get("playlist_targets", []))
     imported_listenbrainz_ids = find_imported_listenbrainz_playlist_ids(
-        current_app.config["UPLOAD_FOLDER"]
+        current_app.config["UPLOAD_FOLDER"],
+        current_app.config.get("PLAYLIST_DB_PATH"),
     )
     hidden_imported_count = 0
 
@@ -108,17 +111,14 @@ def index() -> str:
 
     return render_template(
         "index.html",
-        configured_jspf_url=current_app.config.get("LISTENBRAINZ_JSPF_URL", ""),
+        configured_jspf_url="",
         listenbrainz_ready=listenbrainz.is_configured(),
         listenbrainz_playlists=listenbrainz_playlists,
         listenbrainz_error=listenbrainz_error,
         listenbrainz_hidden_count=hidden_imported_count,
         listenbrainz_show_imported=show_imported,
         listenbrainz_username=current_app.config.get("LISTENBRAINZ_USERNAME", ""),
-        listenbrainz_playlist_type=current_app.config.get(
-            "LISTENBRAINZ_PLAYLIST_TYPE", "createdfor"
-        ),
-        selected_listenbrainz_playlist=current_app.config.get("LISTENBRAINZ_PLAYLIST_ID", ""),
+        selected_listenbrainz_playlist="",
     )
 
 
@@ -142,7 +142,7 @@ def settings_page() -> ResponseReturnValue:
                     "playlist_targets",
                     ", ".join(existing_settings.get("playlist_targets", [])),
                 ),
-                "sync_with_octo": request.form.get("sync_with_octo", ""),
+                "sync_with_downloads": request.form.get("sync_with_downloads", ""),
             },
         )
 
@@ -239,9 +239,8 @@ def review() -> ResponseReturnValue:
     uploaded = request.files.get("playlist_file")
     manual_jspf_url = request.form.get("jspf_url", "").strip()
     selected_playlist = request.form.get("listenbrainz_playlist_id", "").strip()
-    configured_jspf_url = str(current_app.config.get("LISTENBRAINZ_JSPF_URL", "")).strip()
     listenbrainz = ListenBrainzService.from_config(current_app.config)
-    jspf_url = manual_jspf_url or selected_playlist or configured_jspf_url
+    jspf_url = manual_jspf_url or selected_playlist
 
     try:
         if uploaded and uploaded.filename:
@@ -268,18 +267,25 @@ def review() -> ResponseReturnValue:
         return redirect(url_for("web.index"))
 
     session["active_review_saved_path"] = result.saved_path
-    return redirect(url_for("web.review_page", saved_path=result.saved_path))
+
+    try:
+        job_id = _start_sync_for_upload(result, max_tracks=current_app.config["SYNC_MAX_TRACKS"])
+    except Exception as exc:  # pragma: no cover - runtime and network dependent
+        flash(f"Playlist imported, but live sync could not start: {exc}", "error")
+        return redirect(url_for("web.review_page", saved_path=result.saved_path))
+
+    flash("Playlist imported. Live sync started automatically.", "success")
+    return redirect(url_for("web.sync_status_page", job_id=job_id))
 
 
 def _render_review_page(upload) -> str:
-    octo = OctoFiestaService.from_config(current_app.config)
+    deezer = DeezerDownloadService.from_config(current_app.config)
     preview_rows = []
     for track in upload.tracks[:50]:
         preview_rows.append(
             {
                 **track.to_dict(),
                 "queries": build_search_queries(track),
-                "octo_preview": octo.build_handoff_payload(track),
             }
         )
 
@@ -289,7 +295,7 @@ def _render_review_page(upload) -> str:
         tracks=preview_rows,
         total_tracks=upload.count,
         truncated=max(0, upload.count - len(preview_rows)),
-        octo_configured=octo.is_configured(),
+        download_configured=deezer.is_configured(),
         sync_max_tracks=current_app.config["SYNC_MAX_TRACKS"],
     )
 
@@ -316,7 +322,7 @@ def _build_export_only_snapshot(upload) -> dict[str, object]:
             "index": index,
             "status": status,
             "track": track_dict,
-            "match": {"path": source} if is_local_path else {},
+            "match": {},
         }
         results.append(item)
         summary[status] += 1
@@ -367,7 +373,7 @@ def export_playlist() -> ResponseReturnValue:
             f"({export_result['entry_count']} track(s))."
         )
         if export_result.get("missing_count"):
-            message += f" {export_result['missing_count']} still pending Octo-Fiesta download."
+            message += f" {export_result['missing_count']} still pending download."
         flash(message, "success")
     else:
         flash(export_result.get("reason", "Navidrome playlist was not written."), "error")
@@ -386,28 +392,30 @@ def sync_upload() -> ResponseReturnValue:
         if playlist_name:
             upload.playlist_name = playlist_name
         session["active_review_saved_path"] = upload.saved_path
-
-        octo = OctoFiestaService.from_config(current_app.config)
-        if not octo.is_configured():
-            raise ValueError(
-                "Set `OCTO_FIESTA_BASE_URL`, `OCTO_FIESTA_USERNAME`, "
-                "and either a password or token auth."
-            )
-        job_id = start_sync_job(
-            upload,
-            octo,
-            max_tracks=max_tracks,
-            navidrome_playlists_dir=str(
-                current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")
-            ).strip(),
-            playlist_db_path=str(current_app.config.get("PLAYLIST_DB_PATH", "")).strip(),
-        )
-        session["active_sync_job_id"] = job_id
+        job_id = _start_sync_for_upload(upload, max_tracks=max_tracks)
     except Exception as exc:  # pragma: no cover - runtime and network dependent
         flash(f"Sync failed: {exc}", "error")
         return redirect(url_for("web.index"))
 
     return redirect(url_for("web.sync_status_page", job_id=job_id))
+
+
+def _start_sync_for_upload(upload, *, max_tracks: int) -> str:
+    service = DeezerDownloadService.from_config(current_app.config)
+    if not service.is_configured():
+        raise ValueError(
+            "Configure `DEEZER_ARL` and `DEEZER_DOWNLOAD_DIR` to enable live downloads."
+        )
+
+    job_id = start_sync_job(
+        upload,
+        service,
+        max_tracks=max_tracks,
+        navidrome_playlists_dir=str(current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip(),
+        playlist_db_path=str(current_app.config.get("PLAYLIST_DB_PATH", "")).strip(),
+    )
+    session["active_sync_job_id"] = job_id
+    return job_id
 
 
 @web_bp.get("/sync/<job_id>")
@@ -429,3 +437,28 @@ def sync_status(job_id: str) -> ResponseReturnValue:
     if job is None:
         return {"error": "Sync job not found."}, 404
     return job, 200
+
+
+@web_bp.get("/logs")
+def logs_page() -> str:
+    return render_template("logs.html")
+
+
+@web_bp.get("/logs/data")
+def logs_data() -> ResponseReturnValue:
+    log_path = Path(current_app.config["DATA_DIR"]) / "app.log"
+    if not log_path.exists():
+        return {"lines": [], "size": 0}, 200
+    limit = request.args.get("limit", 500, type=int)
+    with open(log_path, encoding="utf-8", errors="replace") as fh:
+        all_lines = fh.readlines()
+    lines = [line.rstrip("\n") for line in all_lines[-limit:]]
+    return {"lines": lines, "total": len(all_lines), "showing": len(lines)}, 200
+
+
+@web_bp.post("/logs/clear")
+def logs_clear() -> ResponseReturnValue:
+    log_path = Path(current_app.config["DATA_DIR"]) / "app.log"
+    if log_path.exists():
+        log_path.write_text("", encoding="utf-8")
+    return redirect(url_for("web.logs_page"))

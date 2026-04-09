@@ -42,7 +42,7 @@ if (Test-Path $lockFile) {
     if ($existingPidText -match '^\d+$') {
         $existingProcess = Get-Process -Id ([int]$existingPidText) -ErrorAction SilentlyContinue
         if ($existingProcess) {
-            Write-Host "Stopping previous Octo Playlist Sync process (PID $existingPidText)..."
+            Write-Host "Stopping previous Playlist Sync process (PID $existingPidText)..."
             Stop-Process -Id $existingProcess.Id -Force
             Wait-Process -Id $existingProcess.Id -Timeout 5 -ErrorAction SilentlyContinue
         }
@@ -91,7 +91,7 @@ if (-not $portCleared) {
     throw "Port $port is still in use after cleanup. Stop the conflicting process and retry."
 }
 
-Write-Host "Starting Octo Playlist Sync UI + API on http://127.0.0.1:$port"
+Write-Host "Starting Playlist Sync UI + API on http://127.0.0.1:$port"
 
 $env:PYTHONPATH = if ($env:PYTHONPATH) { "$PSScriptRoot;$($env:PYTHONPATH)" } else { $PSScriptRoot }
 
@@ -104,5 +104,5 @@ else {
 
 $process = Start-Process -FilePath $pythonExe -ArgumentList $args -WorkingDirectory $PSScriptRoot -PassThru
 Set-Content -Path $lockFile -Value $process.Id
-Write-Host "Octo Playlist Sync started with PID $($process.Id). Lock file: $lockFile"
+Write-Host "Playlist Sync started with PID $($process.Id). Lock file: $lockFile"
 Write-Host "Open http://127.0.0.1:$port/"

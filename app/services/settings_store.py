@@ -33,7 +33,7 @@ def default_settings() -> dict[str, Any]:
         "schedule_day": "monday",
         "schedule_time": "06:00",
         "playlist_targets": ["weekly exploration", "weekly jams"],
-        "sync_with_octo": False,
+        "sync_with_downloads": False,
         "last_run_at": "",
         "last_run_status": "never",
         "last_run_message": "Not run yet.",
@@ -83,7 +83,9 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     settings["automation_enabled"] = _bool_value(
         raw.get("automation_enabled", settings["automation_enabled"])
     )
-    settings["sync_with_octo"] = _bool_value(raw.get("sync_with_octo", settings["sync_with_octo"]))
+    settings["sync_with_downloads"] = _bool_value(
+        raw.get("sync_with_downloads", settings["sync_with_downloads"])
+    )
     settings["playlist_targets"] = _normalize_targets(raw.get("playlist_targets"))
 
     settings["last_run_at"] = str(raw.get("last_run_at", "")).strip()
