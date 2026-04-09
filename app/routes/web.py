@@ -9,6 +9,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -42,6 +43,11 @@ from app.services.settings_store import (
 from app.services.sync_jobs import get_sync_job, start_sync_job
 
 web_bp = Blueprint("web", __name__)
+
+
+@web_bp.get("/favicon.ico")
+def favicon() -> ResponseReturnValue:
+    return send_from_directory(current_app.static_folder, "favicon.svg", mimetype="image/svg+xml")
 
 
 @web_bp.app_context_processor
