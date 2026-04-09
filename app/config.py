@@ -21,13 +21,15 @@ class Config:
     LISTENBRAINZ_AUTH_TOKEN = os.getenv("LISTENBRAINZ_AUTH_TOKEN", "")
     SYNC_MAX_TRACKS = int(os.getenv("SYNC_MAX_TRACKS", "100"))
     NAVIDROME_BASE_URL = os.getenv("NAVIDROME_BASE_URL", "").rstrip("/")
-    NAVIDROME_PLAYLISTS_DIR = os.getenv(
-        "NAVIDROME_PLAYLISTS_DIR", str(Path(DATA_DIR) / "navidrome_playlists")
+    NAVIDROME_PLAYLIST_DIR = (
+        os.getenv("NAVIDROME_PLAYLIST_DIR")
+        or os.getenv("NAVIDROME_PLAYLISTS_DIR")
+        or "/navidrome/playlist"
     )
-    NAVIDROME_MUSIC_ROOT = os.getenv("NAVIDROME_MUSIC_ROOT", "")
+    NAVIDROME_PLAYLISTS_DIR = NAVIDROME_PLAYLIST_DIR
+    NAVIDROME_MUSIC_ROOT = os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root")
     NAVIDROME_M3U_PATH_PREFIX = os.getenv("NAVIDROME_M3U_PATH_PREFIX", "..")
     DEEZER_ARL = os.getenv("DEEZER_ARL", "")
-    DEEZER_DOWNLOAD_DIR = os.getenv("DEEZER_DOWNLOAD_DIR", "/app/downloads")
     DEEZER_QUALITY = os.getenv("DEEZER_QUALITY", "FLAC").upper()
     DEEZER_MATCH_THRESHOLD = float(os.getenv("DEEZER_MATCH_THRESHOLD", "72"))
     SETTINGS_FILE = os.getenv("SETTINGS_FILE", str(Path(DATA_DIR) / "settings.json"))

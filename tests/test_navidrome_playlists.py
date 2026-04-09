@@ -9,7 +9,6 @@ def test_export_navidrome_playlist_writes_stable_weekly_file_and_removes_old_var
 ) -> None:
     monkeypatch.delenv("NAVIDROME_MUSIC_ROOT", raising=False)
     monkeypatch.delenv("NAVIDROME_M3U_PATH_PREFIX", raising=False)
-    monkeypatch.delenv("DEEZER_DOWNLOAD_DIR", raising=False)
     legacy_file = tmp_path / "weekly-exploration-for-geekdadkevin-week-of-2026-03-30-mon.m3u"
     legacy_file.write_text("#EXTM3U\nlegacy.mp3\n", encoding="utf-8")
 
@@ -80,7 +79,7 @@ def test_export_navidrome_playlist_keeps_missing_tracks_as_comments(tmp_path) ->
     assert "https://musicbrainz.org/recording/456" in written
 
 
-def test_export_navidrome_playlist_rewrites_deezer_download_path_to_relative_entry(
+def test_export_navidrome_playlist_rewrites_music_root_path_to_relative_entry(
     tmp_path,
 ) -> None:
     playlist_dir = tmp_path / "playlists"
@@ -97,7 +96,7 @@ def test_export_navidrome_playlist_rewrites_deezer_download_path_to_relative_ent
                 },
                 "resolved_match": {
                     "path": (
-                        "/app/downloads/Avenged Sevenfold/"
+                        "/navidrome/root/Avenged Sevenfold/"
                         "Hail to the King/02 - Hail to the King.flac"
                     )
                 },
@@ -117,7 +116,6 @@ def test_export_navidrome_playlist_marks_unverified_source_path_as_missing(
 ) -> None:
     monkeypatch.delenv("NAVIDROME_MUSIC_ROOT", raising=False)
     monkeypatch.delenv("NAVIDROME_M3U_PATH_PREFIX", raising=False)
-    monkeypatch.delenv("DEEZER_DOWNLOAD_DIR", raising=False)
     playlist_dir = tmp_path / "playlists"
 
     result = export_navidrome_playlist(
@@ -158,7 +156,6 @@ def test_export_navidrome_playlist_resolves_real_file_from_shared_music_root(
 
     monkeypatch.setenv("NAVIDROME_MUSIC_ROOT", str(music_root))
     monkeypatch.setenv("NAVIDROME_M3U_PATH_PREFIX", "..")
-    monkeypatch.setenv("DEEZER_DOWNLOAD_DIR", str(music_root))
 
     result = export_navidrome_playlist(
         playlist_dir=playlist_dir,

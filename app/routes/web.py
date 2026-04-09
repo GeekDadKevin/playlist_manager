@@ -185,9 +185,12 @@ def export_history_playlist() -> ResponseReturnValue:
         flash("Choose a tracked playlist to export first.", "error")
         return redirect(url_for("web.settings_page"))
 
-    playlist_dir = str(current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip()
+    playlist_dir = str(
+        current_app.config.get("NAVIDROME_PLAYLISTS_DIR")
+        or current_app.config.get("NAVIDROME_PLAYLIST_DIR", "")
+    ).strip()
     if not playlist_dir:
-        flash("Set `NAVIDROME_PLAYLISTS_DIR` to enable Navidrome playlist export.", "error")
+        flash("Set `NAVIDROME_PLAYLIST_DIR` to enable Navidrome playlist export.", "error")
         return redirect(url_for("web.settings_page"))
 
     try:
@@ -349,9 +352,12 @@ def export_playlist() -> ResponseReturnValue:
             upload.playlist_name = playlist_name
 
         session["active_review_saved_path"] = upload.saved_path
-        playlist_dir = str(current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip()
+        playlist_dir = str(
+            current_app.config.get("NAVIDROME_PLAYLISTS_DIR")
+            or current_app.config.get("NAVIDROME_PLAYLIST_DIR", "")
+        ).strip()
         if not playlist_dir:
-            raise ValueError("Set `NAVIDROME_PLAYLISTS_DIR` to enable Navidrome playlist export.")
+            raise ValueError("Set `NAVIDROME_PLAYLIST_DIR` to enable Navidrome playlist export.")
 
         sync_snapshot = _build_export_only_snapshot(upload)
         export_result = export_navidrome_playlist(
@@ -410,14 +416,17 @@ def _start_sync_for_upload(upload, *, max_tracks: int) -> str:
     service = DeezerDownloadService.from_config(current_app.config)
     if not service.is_configured():
         raise ValueError(
-            "Configure `DEEZER_ARL` and `DEEZER_DOWNLOAD_DIR` to enable live downloads."
+            "Configure `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable live downloads."
         )
 
     job_id = start_sync_job(
         upload,
         service,
         max_tracks=max_tracks,
-        navidrome_playlists_dir=str(current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip(),
+        navidrome_playlists_dir=str(
+            current_app.config.get("NAVIDROME_PLAYLISTS_DIR")
+            or current_app.config.get("NAVIDROME_PLAYLIST_DIR", "")
+        ).strip(),
         playlist_db_path=str(current_app.config.get("PLAYLIST_DB_PATH", "")).strip(),
     )
     session["active_sync_job_id"] = job_id

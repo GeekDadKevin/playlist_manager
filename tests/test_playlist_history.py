@@ -183,13 +183,13 @@ def test_playlist_history_reuses_saved_local_path_for_reexport(tmp_path) -> None
                         "artist": "Avenged Sevenfold",
                         "album": "Hail to the King",
                         "source": (
-                            "/app/downloads/Avenged Sevenfold/"
+                            "/navidrome/root/Avenged Sevenfold/"
                             "Hail to the King/02 - Hail to the King.flac"
                         ),
                     },
                     "resolved_match": {
                         "path": (
-                            "/app/downloads/Avenged Sevenfold/"
+                            "/navidrome/root/Avenged Sevenfold/"
                             "Hail to the King/02 - Hail to the King.flac"
                         )
                     },

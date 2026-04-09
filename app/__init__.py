@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 
 def _configure_logging(data_dir: str) -> None:
@@ -45,9 +45,17 @@ def create_app(config_class: type[object] | None = None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(config_class or Config)
 
+    playlist_dir = str(
+        app.config.get("NAVIDROME_PLAYLISTS_DIR")
+        or app.config.get("NAVIDROME_PLAYLIST_DIR")
+        or "/navidrome/playlist"
+    ).strip()
+    app.config["NAVIDROME_PLAYLIST_DIR"] = playlist_dir
+    app.config["NAVIDROME_PLAYLISTS_DIR"] = playlist_dir
+
     Path(app.config["DATA_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)
-    Path(app.config["NAVIDROME_PLAYLISTS_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(playlist_dir).mkdir(parents=True, exist_ok=True)
     Path(app.config["SETTINGS_FILE"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["PLAYLIST_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
 

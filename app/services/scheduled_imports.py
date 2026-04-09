@@ -81,7 +81,9 @@ def run_scheduled_playlists(
             )
 
         downloader = DeezerDownloadService.from_config(config)
-        navidrome_dir = str(config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip()
+        navidrome_dir = str(
+            config.get("NAVIDROME_PLAYLISTS_DIR") or config.get("NAVIDROME_PLAYLIST_DIR", "")
+        ).strip()
         upload_folder = str(config.get("UPLOAD_FOLDER", "")).strip()
         max_tracks = int(config.get("SYNC_MAX_TRACKS", 100))
         sync_with_downloads = bool(active_settings.get("sync_with_downloads"))
@@ -119,7 +121,7 @@ def run_scheduled_playlists(
                     "configured": False,
                     "written": False,
                     "playlist_name": upload.playlist_name or upload.original_name,
-                    "reason": "Set `NAVIDROME_PLAYLISTS_DIR` to enable Navidrome playlist export.",
+                    "reason": "Set `NAVIDROME_PLAYLIST_DIR` to enable Navidrome playlist export.",
                 }
 
             history_run_id = (

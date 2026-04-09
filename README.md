@@ -58,7 +58,7 @@ To enable real match-and-download sync, set these values in `.env`:
 
 ```env
 DEEZER_ARL=your_deezer_session_cookie
-DEEZER_DOWNLOAD_DIR=/app/downloads
+NAVIDROME_MUSIC_ROOT=/absolute/path/on/your/docker-host/music/root
 DEEZER_QUALITY=FLAC
 DEEZER_MATCH_THRESHOLD=72
 ```
@@ -77,16 +77,16 @@ Open <http://127.0.0.1:3000>.
 If you want the app to write `.m3u` playlists directly into the folder Navidrome watches, set these values in `.env` before starting Compose:
 
 ```env
-NAVIDROME_PLAYLISTS_DIR=/app/data/navidrome_playlists
-NAVIDROME_PLAYLISTS_DIR_HOST=/absolute/path/on/your/docker-host/navidrome/playlists
-DEEZER_DOWNLOAD_DIR=/app/downloads
-NAVIDROME_MUSIC_ROOT=/path/on/your/docker-host/music/root
+NAVIDROME_PLAYLIST_DIR=/absolute/path/on/your/docker-host/navidrome/playlists
+NAVIDROME_MUSIC_ROOT=/absolute/path/on/your/docker-host/music/root
 NAVIDROME_M3U_PATH_PREFIX=..
 ```
 
-The playlist exporter rewrites downloader paths such as `/app/downloads/Artist/Album/track.flac` into relative `.m3u` entries like `../Artist/Album/track.flac`, which is the format Navidrome expects when the playlist file lives inside a `playlists/` subfolder.
+Docker Compose mounts those host folders into `/navidrome/playlist` and `/navidrome/root` inside the container, so the app always works with stable in-container paths while you only configure real host locations in `.env`.
 
-The Compose file now mounts that host directory into the container. When a sync completes, the app writes a Navidrome-compatible playlist there, and recurring daily/weekly playlist names are normalized to stable filenames so new runs overwrite the previous update instead of piling up dated duplicates. Missing tracks are kept listed in the exported playlist while downloads are still pending.
+The playlist exporter rewrites absolute paths rooted under `NAVIDROME_MUSIC_ROOT` into relative `.m3u` entries like `../Artist/Album/track.flac`, which is the format Navidrome expects when the playlist file lives inside a `playlists/` subfolder.
+
+When a sync completes, the app writes a Navidrome-compatible playlist there, and recurring daily/weekly playlist names are normalized to stable filenames so new runs overwrite the previous update instead of piling up dated duplicates. Missing tracks are kept listed in the exported playlist while downloads are still pending.
 
 ## Project layout
 

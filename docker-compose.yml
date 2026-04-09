@@ -11,17 +11,18 @@ services:
       DATA_DIR: ${DATA_DIR:-/app/data}
       SYNC_MAX_TRACKS: ${SYNC_MAX_TRACKS:-100}
       NAVIDROME_BASE_URL: ${NAVIDROME_BASE_URL:-http://navidrome:4533}
-      NAVIDROME_PLAYLISTS_DIR: ${NAVIDROME_PLAYLISTS_DIR:-/app/data/navidrome_playlists}
-      NAVIDROME_MUSIC_ROOT: ${NAVIDROME_MUSIC_ROOT:-}
+      NAVIDROME_PLAYLIST_DIR: /navidrome/playlist
+      NAVIDROME_PLAYLISTS_DIR: /navidrome/playlist
+      NAVIDROME_MUSIC_ROOT: /navidrome/root
       NAVIDROME_M3U_PATH_PREFIX: ${NAVIDROME_M3U_PATH_PREFIX:-..}
       DEEZER_ARL: ${DEEZER_ARL:-}
-      DEEZER_DOWNLOAD_DIR: ${DEEZER_DOWNLOAD_DIR:-/app/downloads}
       DEEZER_QUALITY: ${DEEZER_QUALITY:-FLAC}
       DEEZER_MATCH_THRESHOLD: ${DEEZER_MATCH_THRESHOLD:-72}
     volumes:
       - .:/app
       - playlist-data:/app/data
-      - ${NAVIDROME_PLAYLISTS_DIR_HOST:-./data/navidrome_playlists}:${NAVIDROME_PLAYLISTS_DIR:-/app/data/navidrome_playlists}
+      - ${NAVIDROME_MUSIC_ROOT:?Set NAVIDROME_MUSIC_ROOT in .env}:/navidrome/root
+      - ${NAVIDROME_PLAYLIST_DIR:?Set NAVIDROME_PLAYLIST_DIR in .env}:/navidrome/playlist
     command: >
       sh -c "uv sync --dev &&
              uv run waitress-serve --host=0.0.0.0 --port=3000 app:app"

@@ -32,7 +32,7 @@ class DeezerDownloadService:
     def __init__(
         self,
         arl: str = "",
-        download_dir: str = "/app/downloads",
+        download_dir: str = "/navidrome/root",
         navidrome_music_root: str = "",
         quality: str = "FLAC",
         match_threshold: float = 72.0,
@@ -50,10 +50,11 @@ class DeezerDownloadService:
 
     @classmethod
     def from_config(cls, config: Any) -> DeezerDownloadService:
+        music_root = str(config.get("NAVIDROME_MUSIC_ROOT", "/navidrome/root"))
         return cls(
             arl=str(config.get("DEEZER_ARL", "")),
-            download_dir=str(config.get("DEEZER_DOWNLOAD_DIR", "/app/downloads")),
-            navidrome_music_root=str(config.get("NAVIDROME_MUSIC_ROOT", "")),
+            download_dir=music_root,
+            navidrome_music_root=music_root,
             quality=str(config.get("DEEZER_QUALITY", "FLAC")),
             match_threshold=float(config.get("DEEZER_MATCH_THRESHOLD", 72.0)),
         )
@@ -567,7 +568,7 @@ class DeezerDownloadService:
     def _validate_configuration(self) -> None:
         if not self.is_configured():
             raise ValueError(
-                "Set `DEEZER_ARL` and `DEEZER_DOWNLOAD_DIR` to enable direct Deezer downloads."
+                "Set `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable direct Deezer downloads."
             )
 
 

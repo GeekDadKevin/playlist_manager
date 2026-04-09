@@ -104,7 +104,10 @@ def sync_playlist() -> ResponseReturnValue:
         playlist_name = upload_result.playlist_name or upload_result.original_name
         response["upload"] = upload_result.to_dict()
 
-    navidrome_playlists_dir = str(current_app.config.get("NAVIDROME_PLAYLISTS_DIR", "")).strip()
+    navidrome_playlists_dir = str(
+        current_app.config.get("NAVIDROME_PLAYLISTS_DIR")
+        or current_app.config.get("NAVIDROME_PLAYLIST_DIR", "")
+    ).strip()
     if navidrome_playlists_dir:
         try:
             response["playlist_export"] = export_navidrome_playlist(

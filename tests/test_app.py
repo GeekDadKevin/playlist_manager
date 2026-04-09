@@ -51,7 +51,7 @@ def test_sync_endpoint_requires_deezer_configuration() -> None:
     app.config.update(
         TESTING=True,
         DEEZER_ARL="",
-        DEEZER_DOWNLOAD_DIR="",
+        NAVIDROME_MUSIC_ROOT="",
     )
     client = app.test_client()
 
@@ -208,7 +208,6 @@ def test_export_playlist_from_ui_does_not_preserve_stale_source_path(tmp_path) -
         PLAYLIST_DB_PATH=str(tmp_path / "playlist_history.db"),
         NAVIDROME_MUSIC_ROOT=str(tmp_path / "music"),
         NAVIDROME_M3U_PATH_PREFIX="..",
-        DEEZER_DOWNLOAD_DIR=str(tmp_path / "downloads"),
     )
     client = app.test_client()
 

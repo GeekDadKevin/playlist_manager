@@ -33,12 +33,13 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
         maximum=100.0,
     )
 
-    for name, default in (
-        ("DATA_DIR", "/app/data"),
-        ("NAVIDROME_PLAYLISTS_DIR", "/app/data/navidrome_playlists"),
-        ("DEEZER_DOWNLOAD_DIR", "/app/downloads"),
-    ):
-        if not _get_value(values, name, default):
+    required_paths = (
+        ("DATA_DIR", _get_value(values, "DATA_DIR", "/app/data")),
+        ("NAVIDROME_PLAYLIST_DIR", _get_playlist_dir_value(values)),
+        ("NAVIDROME_MUSIC_ROOT", _get_value(values, "NAVIDROME_MUSIC_ROOT", "/navidrome/root")),
+    )
+    for name, value in required_paths:
+        if not value:
             errors.append(f"{name} cannot be empty.")
 
     for name in (
@@ -55,9 +56,9 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
         errors.append(f"DEEZER_QUALITY must be one of: {allowed}.")
 
     deezer_arl = _get_value(values, "DEEZER_ARL")
-    deezer_download_dir = _get_value(values, "DEEZER_DOWNLOAD_DIR", "/app/downloads")
-    if deezer_arl and not deezer_download_dir:
-        errors.append("DEEZER_DOWNLOAD_DIR is required when DEEZER_ARL is set.")
+    navidrome_music_root = _get_value(values, "NAVIDROME_MUSIC_ROOT", "/navidrome/root")
+    if deezer_arl and not navidrome_music_root:
+        errors.append("NAVIDROME_MUSIC_ROOT is required when DEEZER_ARL is set.")
 
     return errors
 
@@ -76,6 +77,13 @@ def main() -> int:
 
 def _get_value(values: Mapping[str, object], name: str, default: str = "") -> str:
     return str(values.get(name, default)).strip()
+
+
+def _get_playlist_dir_value(values: Mapping[str, object]) -> str:
+    return (
+        _get_value(values, "NAVIDROME_PLAYLIST_DIR")
+        or _get_value(values, "NAVIDROME_PLAYLISTS_DIR", "/navidrome/playlist")
+    )
 
 
 def _is_http_url(value: str) -> bool:

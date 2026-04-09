@@ -7,14 +7,14 @@ from validate_env import validate_environment
 
 def test_validate_environment_reports_specific_bad_variables(monkeypatch) -> None:
     monkeypatch.setenv("DEEZER_ARL", "demo-cookie")
-    monkeypatch.setenv("DEEZER_DOWNLOAD_DIR", "")
+    monkeypatch.setenv("NAVIDROME_MUSIC_ROOT", "")
     monkeypatch.setenv("DEEZER_QUALITY", "ULTRA-HD")
     monkeypatch.setenv("DEEZER_MATCH_THRESHOLD", "101")
     monkeypatch.setenv("SYNC_MAX_TRACKS", "0")
 
     errors = validate_environment()
 
-    assert any("DEEZER_DOWNLOAD_DIR" in error for error in errors)
+    assert any("NAVIDROME_MUSIC_ROOT" in error for error in errors)
     assert any("DEEZER_QUALITY" in error for error in errors)
     assert any("DEEZER_MATCH_THRESHOLD" in error for error in errors)
     assert any("SYNC_MAX_TRACKS" in error for error in errors)
@@ -24,7 +24,7 @@ def test_validate_environment_accepts_valid_core_settings(monkeypatch) -> None:
     monkeypatch.setenv("APP_PORT", "3000")
     monkeypatch.setenv("SYNC_MAX_TRACKS", "100")
     monkeypatch.setenv("DEEZER_ARL", "demo-cookie")
-    monkeypatch.setenv("DEEZER_DOWNLOAD_DIR", "/tmp/downloads")
+    monkeypatch.setenv("NAVIDROME_MUSIC_ROOT", "/tmp/downloads")
     monkeypatch.setenv("DEEZER_QUALITY", "FLAC")
     monkeypatch.setenv("DEEZER_MATCH_THRESHOLD", "72")
     monkeypatch.setenv("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")

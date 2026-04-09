@@ -459,16 +459,10 @@ def _path_is_within_root(path_value: Path, root_text: str) -> bool:
 
 def _load_media_path_settings() -> tuple[list[str], str]:
     if has_app_context():
-        roots = [
-            str(current_app.config.get("NAVIDROME_MUSIC_ROOT", "")),
-            str(current_app.config.get("DEEZER_DOWNLOAD_DIR", "/app/downloads")),
-        ]
+        roots = [str(current_app.config.get("NAVIDROME_MUSIC_ROOT", "/navidrome/root"))]
         prefix = str(current_app.config.get("NAVIDROME_M3U_PATH_PREFIX", ".."))
     else:
-        roots = [
-            os.getenv("NAVIDROME_MUSIC_ROOT", ""),
-            os.getenv("DEEZER_DOWNLOAD_DIR", "/app/downloads"),
-        ]
+        roots = [os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root")]
         prefix = os.getenv("NAVIDROME_M3U_PATH_PREFIX", "..")
 
     cleaned_roots: list[str] = []

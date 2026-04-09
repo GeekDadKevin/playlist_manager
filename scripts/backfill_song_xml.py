@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 
 def _default_root() -> str:
-    return os.getenv("NAVIDROME_MUSIC_ROOT") or os.getenv("DEEZER_DOWNLOAD_DIR") or ""
+    return os.getenv("NAVIDROME_MUSIC_ROOT") or ""
 
 
 def main() -> int:
@@ -26,10 +26,7 @@ def main() -> int:
         "root",
         nargs="?",
         default=_default_root(),
-        help=(
-            "Music library root to scan. Defaults to NAVIDROME_MUSIC_ROOT or "
-            "DEEZER_DOWNLOAD_DIR from .env."
-        ),
+        help="Music library root to scan. Defaults to NAVIDROME_MUSIC_ROOT from .env.",
     )
     parser.add_argument(
         "--overwrite",
