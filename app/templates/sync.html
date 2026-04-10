@@ -24,6 +24,9 @@
     <div class="status-dialog-card">
       <h3 id="download-progress-title">Downloading selected match</h3>
       <p id="download-progress-text" class="help-text">Preparing the selected file download…</p>
+      <div class="action-row">
+        <button type="button" id="download-progress-close" hidden>Continue</button>
+      </div>
     </div>
   </dialog>
 
@@ -238,7 +241,9 @@
     const downloadProgressDialog = document.getElementById('download-progress-dialog');
     const downloadProgressTitle = document.getElementById('download-progress-title');
     const downloadProgressText = document.getElementById('download-progress-text');
+    const downloadProgressClose = document.getElementById('download-progress-close');
     const syncTabPreferenceKey = `sync-active-tab:{{ job.job_id }}`;
+    let pendingDownloadRedirectUrl = '';
     let reviewReloaded = false;
     let reviewPreparingSeen = Boolean(reviewLoadingDialog?.open);
 
@@ -300,10 +305,14 @@
       const selectedOption = form.querySelector('input[name="candidate_id"]:checked');
       const optionLabel = selectedOption?.closest('.candidate-option')?.innerText?.replace(/\s+/g, ' ').trim();
       const trackLabel = form.dataset.trackLabel || 'selected track';
+      pendingDownloadRedirectUrl = '';
+      if (downloadProgressClose) {
+        downloadProgressClose.hidden = true;
+      }
       downloadProgressTitle.textContent = 'Downloading selected match';
       downloadProgressText.textContent = optionLabel
-        ? `${optionLabel} is downloading now. This page will refresh when it finishes.`
-        : `${trackLabel} is downloading now. This page will refresh when it finishes.`;
+        ? `${optionLabel} is downloading now. The review page will stay here when it finishes.`
+        : `${trackLabel} is downloading now. The review page will stay here when it finishes.`;
 
       if (downloadProgressDialog && typeof downloadProgressDialog.showModal === 'function' && !downloadProgressDialog.open) {
         downloadProgressDialog.showModal();
@@ -322,10 +331,24 @@
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || 'Could not download the selected match.');
       }
+
+      if (payload.job) {
+        updatePage(payload.job);
+      }
+      activateSyncTab('review');
+      pendingDownloadRedirectUrl = payload.redirect_url || '';
+      downloadProgressTitle.textContent = 'Selected match finished';
+      downloadProgressText.textContent = payload.review_complete
+        ? `${payload.message} Low-confidence review is complete.`
+        : `${payload.message} Click Continue to refresh the review list.`;
+
       if (payload.review_complete) {
         sessionStorage.removeItem(syncTabPreferenceKey);
       }
-      window.location.assign(payload.redirect_url);
+      if (downloadProgressClose) {
+        downloadProgressClose.hidden = false;
+        downloadProgressClose.textContent = 'Continue';
+      }
     }
 
     function updatePage(job) {
@@ -426,6 +449,18 @@
         window.requestAnimationFrame(() => activateSyncTab(preferredTab));
       }
 
+      if (downloadProgressClose) {
+        downloadProgressClose.addEventListener('click', () => {
+          if (pendingDownloadRedirectUrl) {
+            window.location.assign(pendingDownloadRedirectUrl);
+            return;
+          }
+          if (downloadProgressDialog?.open) {
+            downloadProgressDialog.close();
+          }
+        });
+      }
+
       document.querySelectorAll('.review-action-form').forEach((form) => {
         form.addEventListener('submit', async (event) => {
           const submitter = event.submitter;
@@ -442,8 +477,12 @@
           try {
             await submitReviewDownload(form);
           } catch (error) {
-            if (downloadProgressDialog?.open) {
-              downloadProgressDialog.close();
+            pendingDownloadRedirectUrl = '';
+            downloadProgressTitle.textContent = 'Download could not finish';
+            downloadProgressText.textContent = error.message;
+            if (downloadProgressClose) {
+              downloadProgressClose.hidden = false;
+              downloadProgressClose.textContent = 'Close';
             }
             const errorBox = document.getElementById('job-error');
             if (errorBox) {

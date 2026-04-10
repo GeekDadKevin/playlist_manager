@@ -514,6 +514,7 @@ def sync_review_bulk_action(job_id: str) -> ResponseReturnValue:
             "message": message,
             "review_complete": review_complete,
             "redirect_url": url_for("web.sync_status_page", job_id=job_id),
+            "job": job,
         }, 200
 
     flash(message, "success")
@@ -585,6 +586,7 @@ def sync_review_action(job_id: str) -> ResponseReturnValue:
             "message": message,
             "review_complete": review_complete,
             "redirect_url": url_for("web.sync_status_page", job_id=job_id),
+            "job": job,
         }, 200
 
     flash(message, "success")

@@ -318,6 +318,7 @@ def test_sync_review_download_action_returns_json_for_async_progress(monkeypatch
     assert response.status_code == 200
     assert response.json["ok"] is True
     assert response.json["redirect_url"].endswith("/sync/job-low")
+    assert response.json["job"]["sync"]["summary"]["low_confidence"] == 0
 
 
 def test_sync_status_page_shows_soundcloud_search_message_while_review_preparing(
