@@ -7,12 +7,25 @@ from app.models import PlaylistTrack
 
 
 def parse_jspf(content: str | dict) -> list[PlaylistTrack]:
-    payload = json.loads(content) if isinstance(content, str) else content
+    payload = json.loads(content.lstrip("\ufeff").strip()) if isinstance(content, str) else content
+    if not isinstance(payload, dict):
+        raise ValueError("JSPF content must be a JSON object.")
+
     playlist = payload.get("playlist", {})
+    if not isinstance(playlist, dict):
+        raise ValueError("JSPF playlist payload is missing the `playlist` object.")
+
     items = playlist.get("track", [])
+    if isinstance(items, dict):
+        items = [items]
+    elif not isinstance(items, list):
+        items = []
 
     tracks: list[PlaylistTrack] = []
     for item in items:
+        if not isinstance(item, dict):
+            continue
+
         identifier = _text_value(item.get("identifier"))
         title = (_text_value(item.get("title")) or _title_from_identifier(identifier)).strip()
         if not title:

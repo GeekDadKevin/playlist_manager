@@ -69,6 +69,50 @@ def test_parse_jspf_accepts_identifier_lists_from_listenbrainz() -> None:
     )
 
 
+def test_parse_uploaded_downloaded_jspf_with_utf8_bom() -> None:
+    content = (
+        '\ufeff{'
+        '"playlist": {'
+        '"title": "Downloaded Mix",'
+        '"track": ['
+        '{'
+        '"title": "Windowlicker",'
+        '"creator": "Aphex Twin",'
+        '"album": "Windowlicker",'
+        '"identifier": "https://musicbrainz.org/recording/demo"'
+        '}'
+        ']'
+        '}'
+        '}'
+    )
+
+    tracks = parse_uploaded_playlist("downloaded.jspf", content.encode("utf-8"))
+
+    assert len(tracks) == 1
+    assert tracks[0].artist == "Aphex Twin"
+    assert tracks[0].title == "Windowlicker"
+
+
+def test_parse_jspf_accepts_single_track_dict_payload() -> None:
+    payload = {
+        "playlist": {
+            "track": {
+                "title": "Only Shallow",
+                "creator": "My Bloody Valentine",
+                "album": "Loveless",
+                "identifier": "https://musicbrainz.org/recording/only-shallow",
+            }
+        }
+    }
+
+    tracks = parse_jspf(payload)
+
+    assert len(tracks) == 1
+    assert tracks[0].artist == "My Bloody Valentine"
+    assert tracks[0].title == "Only Shallow"
+    assert tracks[0].album == "Loveless"
+
+
 def test_parse_navidrome_missing_csv_extracts_metadata() -> None:
     csv_content = (
         "Theory of a Deadman/Scars & Souvenirs (Special Edition)/"

@@ -24,7 +24,7 @@ def parse_uploaded_playlist(filename: str, payload: bytes) -> list[PlaylistTrack
     if suffix not in SUPPORTED_EXTENSIONS:
         raise ValueError(f"Unsupported playlist type: {suffix or 'unknown'}")
 
-    text = payload.decode("utf-8", errors="ignore")
+    text = payload.decode("utf-8-sig", errors="ignore")
     if suffix in {".m3u", ".m3u8"}:
         return parse_m3u(text)
     if suffix == ".csv":

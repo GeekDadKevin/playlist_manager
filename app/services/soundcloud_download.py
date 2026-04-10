@@ -178,7 +178,7 @@ class SoundCloudDownloadService:
 
         link = str(info.get("webpage_url") or info.get("original_url") or info.get("url") or "")
         soundcloud_id = str(info.get("id") or "").strip()
-        raw_album = str(info.get("album") or info.get("playlist_title") or "").strip()
+        raw_album = str(info.get("album") or "").strip()
         album = raw_album or "SoundCloud"
         return {
             "id": f"soundcloud:{soundcloud_id or link}",
@@ -254,11 +254,18 @@ class SoundCloudDownloadService:
         if not output_path.exists():
             raise ValueError("SoundCloud download finished, but no audio file was written.")
 
+        resolved_title = self._preferred_title(track, match, info, output_path)
+        resolved_artist = self._preferred_artist_name(track, match, info)
+        resolved_album = self._preferred_download_album_name(info)
+        match["title"] = resolved_title
+        match["artist"] = resolved_artist
+        match["album"] = resolved_album
+
         metadata_path = write_song_metadata_xml(
             output_path,
-            title=str(match.get("title") or track.title or output_path.stem),
-            artist=str(match.get("artist") or track.artist or ""),
-            album=self._preferred_album_name(match),
+            title=resolved_title,
+            artist=resolved_artist,
+            album=resolved_album,
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="soundcloud",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
@@ -287,13 +294,51 @@ class SoundCloudDownloadService:
         raise ValueError("Could not determine the saved SoundCloud file path.")
 
     def _build_stem_path(self, match: dict[str, Any], track: PlaylistTrack) -> Path:
-        artist = _safe_name(str(match.get("artist") or track.artist or "Unknown Artist"))
+        artist = _safe_name(self._preferred_artist_name(track, match))
         album = _safe_name(self._preferred_album_name(match))
         title = _safe_name(str(match.get("title") or track.title or "Unknown Track"))
         return Path(self.download_dir) / artist / album / title
 
+    def _preferred_title(
+        self,
+        track: PlaylistTrack,
+        match: dict[str, Any],
+        info: dict[str, Any] | None = None,
+        output_path: Path | None = None,
+    ) -> str:
+        for value in (
+            str(match.get("title") or "").strip(),
+            str(track.title or "").strip(),
+            str((info or {}).get("track") or (info or {}).get("title") or "").strip(),
+            output_path.stem if output_path is not None else "",
+        ):
+            if value:
+                return value
+        return "Unknown Track"
+
+    def _preferred_artist_name(
+        self,
+        track: PlaylistTrack,
+        match: dict[str, Any],
+        info: dict[str, Any] | None = None,
+    ) -> str:
+        for value in (
+            str(track.artist or "").strip(),
+            str(match.get("artist") or "").strip(),
+            str((info or {}).get("artist") or "").strip(),
+            str((info or {}).get("creator") or "").strip(),
+            str((info or {}).get("uploader") or "").strip(),
+        ):
+            if value:
+                return value
+        return "Unknown Artist"
+
     def _preferred_album_name(self, match: dict[str, Any]) -> str:
         album = str(match.get("album") or "").strip()
+        return album or "SoundCloud"
+
+    def _preferred_download_album_name(self, info: dict[str, Any] | None = None) -> str:
+        album = str((info or {}).get("album") or "").strip()
         return album or "SoundCloud"
 
     def _candidate_album_names(self, match: dict[str, Any], track: PlaylistTrack) -> list[str]:
@@ -315,7 +360,7 @@ class SoundCloudDownloadService:
         if not root.is_dir():
             return None
 
-        artist = _safe_name(str(match.get("artist") or track.artist or ""))
+        artist = _safe_name(self._preferred_artist_name(track, match))
         title_key = normalize_text(str(match.get("title") or track.title or ""))
         if not artist or not title_key:
             return None

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.models import PlaylistTrack
 from app.services.soundcloud_download import SoundCloudDownloadService
 
@@ -83,6 +85,60 @@ def test_soundcloud_search_track_returns_empty_on_handshake_timeout() -> None:
     ranked = service.search_track(PlaylistTrack(title="Teardrop", artist="Massive Attack"))
 
     assert ranked == []
+
+
+def test_soundcloud_download_xml_uses_track_artist_and_soundcloud_album_fallback(
+    tmp_path,
+) -> None:
+    payload = {
+        "entries": [
+            {
+                "id": "12345",
+                "title": "Uploader Demo",
+                "uploader": "RandomUploader123",
+                "webpage_url": "https://soundcloud.com/demo/teardrop",
+            }
+        ]
+    }
+
+    class DownloadYDL(StubYDL):
+        def extract_info(self, url: str, download: bool = False):
+            if url.startswith("scsearch"):
+                return payload
+            if not download:
+                raise AssertionError(f"Unexpected yt-dlp request: {url!r}, download={download}")
+
+            filepath = self.opts["outtmpl"]["default"].replace("%(ext)s", "mp3")
+            Path(filepath).write_text("fake audio", encoding="utf-8")
+            return {
+                "filepath": filepath,
+                "ext": "mp3",
+                "artist": "",
+                "uploader": "RandomUploader123",
+                "album": "",
+                "playlist_title": "",
+            }
+
+    service = SoundCloudDownloadService(
+        download_dir=str(tmp_path),
+        extractor_factory=lambda opts: DownloadYDL(opts, payload),
+    )
+
+    result = service.resolve_track_selection(
+        PlaylistTrack(title="Teardrop", artist="Massive Attack", album="Mezzanine"),
+        {
+            "title": "Uploader Demo",
+            "artist": "RandomUploader123",
+            "album": "Some Playlist Dump",
+            "link": "https://soundcloud.com/demo/teardrop",
+            "provider": "soundcloud",
+        },
+    )
+
+    metadata_xml = Path(result["download"]["metadata_path"]).read_text(encoding="utf-8")
+
+    assert "<performingartist>Massive Attack</performingartist>" in metadata_xml
+    assert "<albumtitle>SoundCloud</albumtitle>" in metadata_xml
 
 
 def test_soundcloud_uses_soundcloud_album_when_provider_album_missing(tmp_path) -> None:
