@@ -5,7 +5,19 @@
 {% block content %}
   {% set low_confidence_items = job.sync.results | selectattr('status', 'equalto', 'low_confidence') | list %}
   {% set pending_export = job.sync.playlist_export if job.sync.playlist_export else None %}
-  {% set show_review_tab = low_confidence_items or (job.status == 'completed' and pending_export and not pending_export.written) %}
+  {% set review_preparing = job.sync.review_preparing | default(false) %}
+  {% set review_search_status = job.sync.review_search_status | default({}) %}
+  {% set show_review_tab = review_preparing or low_confidence_items or (job.status == 'completed' and pending_export and not pending_export.written) %}
+
+  <dialog id="review-loading-dialog" class="status-dialog" {% if review_preparing %}open{% endif %}>
+    <div class="status-dialog-card">
+      <h3>Running SoundCloud searches for low-confidence tracks</h3>
+      <p id="review-search-status" class="help-text">
+        Checking {{ review_search_status.completed or 0 }} of {{ review_search_status.total or low_confidence_items|length or 0 }} track(s)
+        {% if review_search_status.current_track %} — <code>{{ review_search_status.current_track }}</code>{% endif %}
+      </p>
+    </div>
+  </dialog>
 
   <div class="tab-shell" data-tabset>
     <div class="tab-list" role="tablist" aria-label="Sync workflow">
@@ -59,18 +71,24 @@
           Use the choices below to pick the Deezer or SoundCloud result you want for each song, or keep the track marked missing for now.
         </p>
 
-        {% if low_confidence_items %}
+        {% if review_preparing %}
+          <p class="help-text">
+            Running SoundCloud searches for low-confidence tracks now so both provider lists are ready before you make your picks.
+          </p>
+        {% elif low_confidence_items %}
           <form action="{{ url_for('web.sync_review_bulk_action', job_id=job.job_id) }}" method="post" class="stack">
             <div class="action-row">
               <button type="submit" name="action" value="skip_all">Accept all remaining as missing</button>
               <button type="submit" name="action" value="soundcloud_all">Try SoundCloud for all low-confidence tracks</button>
             </div>
-            <p class="help-text">The SoundCloud bulk action auto-picks any high-confidence SoundCloud matches and then refreshes the per-song sections below so you can choose from the remaining Deezer and SoundCloud options.</p>
+            <p class="help-text">The SoundCloud bulk action auto-picks any high-confidence SoundCloud matches and then leaves the remaining songs here with both Deezer and SoundCloud choices for you to pick from.</p>
           </form>
 
           <div class="review-grid">
             {% for item in low_confidence_items %}
               {% set candidates = item.candidates or ([item.match] if item.match else []) %}
+              {% set deezer_candidates = candidates | selectattr('provider', 'equalto', 'deezer') | list %}
+              {% set soundcloud_candidates = candidates | selectattr('provider', 'equalto', 'soundcloud') | list %}
               <article class="card muted review-card">
                 <h3>{{ item.track.artist or 'Unknown artist' }} — {{ item.track.title or 'Unknown title' }}</h3>
                 <p class="help-text">{{ item.message or 'Manual review required for this track.' }}</p>
@@ -106,19 +124,39 @@
                   </div>
 
                   {% if candidates %}
-                    <div class="candidate-list">
-                      {% for candidate in candidates %}
-                        <label class="candidate-option">
-                          <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first %}checked{% endif %}>
-                          <span>
-                            <strong>[{{ candidate.provider_label or candidate.provider or 'Match' }}]</strong>
-                            <strong>{{ candidate.artist or '—' }} — {{ candidate.title or '—' }}</strong>
-                            {% if candidate.album %}<span> · {{ candidate.album }}</span>{% endif %}
-                            {% if candidate.score is defined %}<span> · score {{ candidate.score }}</span>{% endif %}
-                          </span>
-                        </label>
-                      {% endfor %}
-                    </div>
+                    {% if deezer_candidates %}
+                      <p class="help-text"><strong>Deezer choices</strong></p>
+                      <div class="candidate-list provider-group">
+                        {% for candidate in deezer_candidates %}
+                          <label class="candidate-option">
+                            <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first and not soundcloud_candidates %}checked{% endif %}>
+                            <span>
+                              <strong>[{{ candidate.provider_label or 'Deezer' }}]</strong>
+                              <strong>{{ candidate.artist or '—' }} — {{ candidate.title or '—' }}</strong>
+                              {% if candidate.album %}<span> · {{ candidate.album }}</span>{% endif %}
+                              {% if candidate.score is defined %}<span> · score {{ candidate.score }}</span>{% endif %}
+                            </span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+
+                    {% if soundcloud_candidates %}
+                      <p class="help-text"><strong>SoundCloud choices</strong></p>
+                      <div class="candidate-list provider-group">
+                        {% for candidate in soundcloud_candidates %}
+                          <label class="candidate-option">
+                            <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first %}checked{% endif %}>
+                            <span>
+                              <strong>[{{ candidate.provider_label or 'SoundCloud' }}]</strong>
+                              <strong>{{ candidate.artist or '—' }} — {{ candidate.title or '—' }}</strong>
+                              {% if candidate.album %}<span> · {{ candidate.album }}</span>{% endif %}
+                              {% if candidate.score is defined %}<span> · score {{ candidate.score }}</span>{% endif %}
+                            </span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
 
                     <button type="submit" name="action" value="download">Download selected match</button>
                   {% endif %}
@@ -177,7 +215,10 @@
 
   <script>
     const statusUrl = {{ url_for('web.sync_status', job_id=job.job_id) | tojson }};
+    const reviewLoadingDialog = document.getElementById('review-loading-dialog');
+    const reviewSearchStatus = document.getElementById('review-search-status');
     let reviewReloaded = false;
+    let reviewPreparingSeen = Boolean(reviewLoadingDialog?.open);
 
     function escapeHtml(value) {
       return String(value ?? '—')
@@ -267,6 +308,29 @@
       }
 
       renderResults(results);
+
+      const reviewPreparing = Boolean(job.sync?.review_preparing);
+      if (reviewSearchStatus && job.sync?.review_search_status) {
+        const searchState = job.sync.review_search_status;
+        const currentTrack = searchState.current_track ? ` — ${searchState.current_track}` : '';
+        reviewSearchStatus.textContent = `Checking ${searchState.completed ?? 0} of ${searchState.total ?? 0} track(s)${currentTrack}`;
+      }
+      if (reviewLoadingDialog) {
+        if (reviewPreparing && typeof reviewLoadingDialog.showModal === 'function' && !reviewLoadingDialog.open) {
+          reviewLoadingDialog.showModal();
+        }
+        if (!reviewPreparing && reviewLoadingDialog.open) {
+          reviewLoadingDialog.close();
+        }
+      }
+      if (reviewPreparing) {
+        reviewPreparingSeen = true;
+      }
+      if (reviewPreparingSeen && !reviewPreparing && !reviewReloaded) {
+        reviewReloaded = true;
+        window.location.reload();
+        return;
+      }
 
       const reviewPanel = document.querySelector('[data-tab-panel="review"]');
       if (

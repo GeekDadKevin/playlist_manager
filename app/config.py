@@ -36,5 +36,8 @@ class Config:
     SOUNDCLOUD_MATCH_THRESHOLD = float(
         os.getenv("SOUNDCLOUD_MATCH_THRESHOLD", str(DEEZER_MATCH_THRESHOLD))
     )
+    SOUNDCLOUD_REQUEST_TIMEOUT = float(os.getenv("SOUNDCLOUD_REQUEST_TIMEOUT", "25"))
+    SOUNDCLOUD_REQUEST_RETRIES = int(os.getenv("SOUNDCLOUD_REQUEST_RETRIES", "3"))
+    SOUNDCLOUD_FORCE_IPV4 = os.getenv("SOUNDCLOUD_FORCE_IPV4", "1")
     SETTINGS_FILE = os.getenv("SETTINGS_FILE", str(Path(DATA_DIR) / "settings.json"))
     PLAYLIST_DB_PATH = os.getenv("PLAYLIST_DB_PATH", str(Path(DATA_DIR) / "playlist_history.db"))

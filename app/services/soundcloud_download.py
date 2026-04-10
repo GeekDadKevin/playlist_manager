@@ -31,11 +31,17 @@ class SoundCloudDownloadService:
         match_threshold: float = 72.0,
         enabled: bool = True,
         extractor_factory: Any | None = None,
+        request_timeout: float = 25.0,
+        request_retries: int = 3,
+        force_ipv4: bool = True,
     ) -> None:
         self.download_dir = download_dir
         self.navidrome_music_root = navidrome_music_root or download_dir
         self.match_threshold = match_threshold
         self.enabled = enabled
+        self.request_timeout = max(float(request_timeout), 1.0)
+        self.request_retries = max(int(request_retries), 0)
+        self.force_ipv4 = force_ipv4
         self._extractor_factory = extractor_factory or _default_extractor_factory
 
     @classmethod
@@ -49,11 +55,18 @@ class SoundCloudDownloadService:
                 config.get("DEEZER_MATCH_THRESHOLD", 72.0),
             )
         )
+        timeout = float(config.get("SOUNDCLOUD_REQUEST_TIMEOUT", 25.0))
+        retries = int(config.get("SOUNDCLOUD_REQUEST_RETRIES", 3))
+        raw_force_ipv4 = str(config.get("SOUNDCLOUD_FORCE_IPV4", "1")).strip().lower()
+        force_ipv4 = raw_force_ipv4 not in {"0", "false", "no", "off"}
         return cls(
             download_dir=music_root,
             navidrome_music_root=music_root,
             match_threshold=threshold,
             enabled=enabled,
+            request_timeout=timeout,
+            request_retries=retries,
+            force_ipv4=force_ipv4,
         )
 
     def is_configured(self) -> bool:
@@ -70,7 +83,17 @@ class SoundCloudDownloadService:
         candidates: list[dict[str, Any]] = []
         seen: set[str] = set()
         for query in build_search_queries(track):
-            payload = self._extract_info(f"scsearch{limit}:{query}", download=False)
+            try:
+                payload = self._extract_info(f"scsearch{limit}:{query}", download=False)
+            except Exception as exc:
+                log.warning(
+                    "SoundCloud metadata lookup failed for %r with query %r: %s",
+                    track.title,
+                    query,
+                    exc,
+                )
+                continue
+
             entries = payload.get("entries", []) if isinstance(payload, dict) else []
             for entry in entries:
                 if not isinstance(entry, dict):
@@ -174,7 +197,14 @@ class SoundCloudDownloadService:
             "no_warnings": True,
             "noplaylist": True,
             "skip_download": not download,
+            "socket_timeout": self.request_timeout,
+            "retries": self.request_retries,
+            "extractor_retries": self.request_retries,
+            "fragment_retries": self.request_retries,
+            "logger": _YtDlpLogger(),
         }
+        if self.force_ipv4:
+            options["source_address"] = "0.0.0.0"
         if download and outtmpl:
             options.update(
                 {
@@ -184,11 +214,15 @@ class SoundCloudDownloadService:
                 }
             )
 
-        with self._extractor_factory(options) as ydl:
-            info = ydl.extract_info(url, download=download)
-            if isinstance(info, dict):
-                return info
-            raise ValueError("SoundCloud extractor returned an unexpected payload.")
+        try:
+            with self._extractor_factory(options) as ydl:
+                info = ydl.extract_info(url, download=download)
+        except Exception as exc:
+            raise RuntimeError(_friendly_soundcloud_error(exc)) from exc
+
+        if isinstance(info, dict):
+            return info
+        raise ValueError("SoundCloud extractor returned an unexpected payload.")
 
     def _download_track(
         self,
@@ -305,6 +339,41 @@ def _default_extractor_factory(options: dict[str, Any]) -> Any:
     if YoutubeDL is None:
         raise RuntimeError("yt-dlp is not installed. Run `uv sync --dev` to add it.")
     return YoutubeDL(options)
+
+
+class _YtDlpLogger:
+    def debug(self, message: str) -> None:
+        if message and not str(message).startswith("[debug]"):
+            log.debug("yt-dlp: %s", message)
+
+    def warning(self, message: str) -> None:
+        if message:
+            log.warning("yt-dlp warning: %s", message)
+
+    def error(self, message: str) -> None:
+        text = str(message).strip()
+        if not text:
+            return
+        if "timed out" in text.lower():
+            log.warning("SoundCloud extractor timed out: %s", text)
+        else:
+            log.warning("SoundCloud extractor error: %s", text)
+
+
+def _friendly_soundcloud_error(exc: Exception) -> str:
+    text = str(exc).strip() or exc.__class__.__name__
+    lowered = text.lower()
+    if "handshake operation timed out" in lowered or "timed out" in lowered:
+        return (
+            "SoundCloud request timed out while fetching metadata. "
+            "Try again, or raise `SOUNDCLOUD_REQUEST_TIMEOUT` in `.env`."
+        )
+    if "name resolution" in lowered:
+        return (
+            "SoundCloud lookup could not reach the network from the container. "
+            "Check Docker DNS/network access and try again."
+        )
+    return text
 
 
 def _safe_name(value: str) -> str:

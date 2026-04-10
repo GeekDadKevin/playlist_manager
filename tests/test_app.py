@@ -234,8 +234,67 @@ def test_sync_review_bulk_soundcloud_action_redirects_back_to_status(monkeypatch
     assert response.headers["Location"].endswith("/sync/job-low")
 
 
+def test_sync_status_page_shows_soundcloud_search_message_while_review_preparing(
+    monkeypatch,
+) -> None:
+    app = create_app()
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    job = {
+        "job_id": "job-preparing",
+        "status": "running",
+        "created_at": "",
+        "started_at": "",
+        "completed_at": "",
+        "progress_percent": 100,
+        "error": "",
+        "upload": {
+            "saved_path": "memory://demo",
+            "original_name": "demo.m3u",
+            "playlist_name": "Demo playlist",
+        },
+        "sync": {
+            "mode": "download",
+            "provider": "deezer",
+            "threshold": 72,
+            "processing_mode": "sequential",
+            "started_at": "",
+            "completed_at": "",
+            "review_preparing": True,
+            "review_search_status": {"completed": 1, "total": 2},
+            "summary": {
+                "requested": 2,
+                "processed": 2,
+                "preview": 0,
+                "downloaded": 0,
+                "already_available": 0,
+                "low_confidence": 2,
+                "not_found": 0,
+                "failed": 0,
+            },
+            "results": [],
+        },
+    }
+
+    monkeypatch.setattr("app.routes.web.get_sync_job", lambda job_id: job)
+
+    response = client.get("/sync/job-preparing")
+
+    assert response.status_code == 200
+    assert b"Running SoundCloud searches for low-confidence tracks" in response.data
+
+
 def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_path) -> None:
+    class StubSoundCloudService:
+        def is_configured(self) -> bool:
+            return True
+
     class StubService:
+        def __init__(self) -> None:
+            self.soundcloud_service = StubSoundCloudService()
+            self.search_requests: list[tuple[str, bool]] = []
+
         def sync_tracks(self, tracks, max_tracks=None, progress_callback=None):
             result = {
                 "mode": "download",
@@ -256,6 +315,7 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
                 },
                 "results": [
                     {
+                        "index": 1,
                         "track": {"title": "Teardrop", "artist": "Massive Attack"},
                         "status": "low_confidence",
                         "message": "Best match was below the configured confidence threshold.",
@@ -266,6 +326,8 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
                                 "artist": "Massive Attack",
                                 "score": 68.5,
                                 "deezer_id": 12345,
+                                "provider": "deezer",
+                                "provider_label": "Deezer",
                             }
                         ],
                     }
@@ -275,6 +337,29 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
                 progress_callback(result)
             return result
 
+        def search_track(self, track, limit=8, include_soundcloud=False):
+            self.search_requests.append((track.title, include_soundcloud))
+            return [
+                {
+                    "title": "Teardrop",
+                    "artist": "Massive Attack",
+                    "score": 68.5,
+                    "deezer_id": 12345,
+                    "provider": "deezer",
+                    "provider_label": "Deezer",
+                },
+                {
+                    "title": "Teardrop",
+                    "artist": "Massive Attack",
+                    "album": "SoundCloud",
+                    "score": 91.0,
+                    "id": "soundcloud:123",
+                    "provider": "soundcloud",
+                    "provider_label": "SoundCloud",
+                },
+            ]
+
+    service = StubService()
     upload = PlaylistUpload(
         source_kind="upload",
         original_name="demo.m3u",
@@ -288,7 +373,7 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
     _run_sync_job(
         job_id,
         upload,
-        StubService(),
+        service,
         1,
         str(tmp_path / "navidrome_playlists"),
         "",
@@ -300,6 +385,11 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
     assert job["status"] == "completed"
     assert job["sync"]["playlist_export"]["written"] is False
     assert job["sync"]["playlist_export"]["pending_review"] is True
+    assert any(
+        candidate.get("provider") == "soundcloud"
+        for candidate in job["sync"]["results"][0]["candidates"]
+    )
+    assert service.search_requests == [("Teardrop", True)]
     assert not (tmp_path / "navidrome_playlists" / "Weekly Jams.m3u").exists()
 
 

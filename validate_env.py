@@ -40,6 +40,21 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
         minimum=0.0,
         maximum=100.0,
     )
+    _validate_float(
+        values,
+        "SOUNDCLOUD_REQUEST_TIMEOUT",
+        errors,
+        default="25",
+        minimum=1.0,
+    )
+    _validate_int(
+        values,
+        "SOUNDCLOUD_REQUEST_RETRIES",
+        errors,
+        default="3",
+        minimum=0,
+        maximum=10,
+    )
 
     required_paths = (
         ("DATA_DIR", _get_value(values, "DATA_DIR", "/app/data")),

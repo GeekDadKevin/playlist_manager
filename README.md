@@ -63,9 +63,14 @@ DEEZER_QUALITY=FLAC
 DEEZER_MATCH_THRESHOLD=72
 SOUNDCLOUD_FALLBACK_ENABLED=1
 SOUNDCLOUD_MATCH_THRESHOLD=72
+SOUNDCLOUD_REQUEST_TIMEOUT=25
+SOUNDCLOUD_REQUEST_RETRIES=3
+SOUNDCLOUD_FORCE_IPV4=1
 ```
 
 Sync is intentionally **sequential**: the app waits for each Deezer track to finish before moving to the next, then records per-track completion feedback. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud result through `yt-dlp` during manual review, or accept the remaining low-confidence items as missing in one step.
+
+If Docker logs show a SoundCloud message like `_ssl.c:993: The handshake operation timed out`, the app now retries those lookups and forces IPv4 by default. You can further raise `SOUNDCLOUD_REQUEST_TIMEOUT` in `.env` if your network is slow.
 
 ### Docker Compose
 
