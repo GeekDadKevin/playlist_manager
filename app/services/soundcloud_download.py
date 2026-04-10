@@ -76,13 +76,23 @@ class SoundCloudDownloadService:
             return False
         return True
 
-    def search_track(self, track: PlaylistTrack, limit: int = 10) -> list[dict[str, Any]]:
+    def search_track(
+        self,
+        track: PlaylistTrack,
+        limit: int = 10,
+        *,
+        max_queries: int | None = None,
+    ) -> list[dict[str, Any]]:
         if not self.is_configured():
             return []
 
+        queries = build_search_queries(track)
+        if isinstance(max_queries, int) and max_queries > 0:
+            queries = queries[:max_queries]
+
         candidates: list[dict[str, Any]] = []
         seen: set[str] = set()
-        for query in build_search_queries(track):
+        for query in queries:
             try:
                 payload = self._extract_info(f"scsearch{limit}:{query}", download=False)
             except Exception as exc:

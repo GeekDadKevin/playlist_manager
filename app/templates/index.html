@@ -73,7 +73,7 @@
           </label>
           <p class="help-text">
             Showing {{ listenbrainz_playlists|length }}
-            {% if listenbrainz_show_imported %}total{% else %}not-yet-imported plus refreshable weekly targets{% endif %}
+            {% if listenbrainz_show_imported %}total{% else %}not-yet-imported plus Created For You and refreshable weekly targets{% endif %}
             playlist(s) for <code>{{ listenbrainz_username }}</code>{% if listenbrainz_hidden_count and not listenbrainz_show_imported %};
             {{ listenbrainz_hidden_count }} imported playlist(s) hidden{% endif %}.
           </p>

@@ -41,6 +41,7 @@ from app.services.settings_store import (
     save_settings as save_app_settings,
 )
 from app.services.sync_jobs import (
+    download_selected_low_confidence_candidates,
     export_sync_job_playlist,
     get_sync_job,
     resolve_low_confidence_candidate,
@@ -48,7 +49,6 @@ from app.services.sync_jobs import (
     skip_all_low_confidence_candidates,
     skip_low_confidence_candidate,
     start_sync_job,
-    try_soundcloud_for_low_confidence_candidates,
 )
 
 web_bp = Blueprint("web", __name__)
@@ -115,8 +115,12 @@ def index() -> str:
                 for playlist in fetched_playlists:
                     playlist_id = str(playlist.get("playlist_id", "")).lower()
                     playlist_title = str(playlist.get("title", ""))
+                    playlist_source = str(playlist.get("source", "")).strip().lower()
                     is_imported = bool(playlist_id and playlist_id in imported_listenbrainz_ids)
-                    keep_visible = matches_playlist_target(playlist_title, playlist_targets)
+                    keep_visible = playlist_source == "createdfor" or matches_playlist_target(
+                        playlist_title,
+                        playlist_targets,
+                    )
                     if is_imported and not keep_visible:
                         hidden_imported_count += 1
                         continue
@@ -443,6 +447,13 @@ def _start_sync_for_upload(upload, *, max_tracks: int) -> str:
     return job_id
 
 
+def _wants_json_response() -> bool:
+    if request.headers.get("X-Requested-With", "").strip().lower() == "xmlhttprequest":
+        return True
+    best_match = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    return best_match == "application/json"
+
+
 @web_bp.get("/sync/<job_id>")
 def sync_status_page(job_id: str) -> ResponseReturnValue:
     job = get_sync_job(job_id)
@@ -473,22 +484,40 @@ def sync_review_bulk_action(job_id: str) -> ResponseReturnValue:
             job = skip_all_low_confidence_candidates(job_id)
             skipped = int(job.get("bulk_summary", {}).get("skipped", 0))
             message = f"Accepted {skipped} low-confidence track(s) as missing."
-        elif action == "soundcloud_all":
-            job = try_soundcloud_for_low_confidence_candidates(job_id)
+        elif action == "download_selected":
+            item_indexes = request.form.getlist("selected_item_index")
+            candidate_ids = request.form.getlist("selected_candidate_id")
+            selections = [
+                (int(item_index), str(candidate_id).strip())
+                for item_index, candidate_id in zip(item_indexes, candidate_ids, strict=False)
+                if str(item_index).strip() and str(candidate_id).strip()
+            ]
+            job = download_selected_low_confidence_candidates(job_id, selections)
             summary = job.get("bulk_summary", {})
             message = (
-                "SoundCloud attempt finished: "
-                f"{int(summary.get('downloaded', 0))} downloaded, "
+                f"Downloaded {int(summary.get('downloaded', 0))} selected match(es); "
                 f"{int(summary.get('remaining', 0))} still need review."
             )
         else:
             raise ValueError("Unknown bulk review action.")
     except Exception as exc:  # pragma: no cover - runtime/network dependent
-        flash(f"Could not update the low-confidence tracks: {exc}", "error")
+        error_message = f"Could not update the low-confidence tracks: {exc}"
+        if _wants_json_response():
+            return {"ok": False, "error": error_message}, 400
+        flash(error_message, "error")
         return redirect(url_for("web.sync_status_page", job_id=job_id))
 
+    review_complete = job.get("sync", {}).get("summary", {}).get("low_confidence", 0) == 0
+    if _wants_json_response():
+        return {
+            "ok": True,
+            "message": message,
+            "review_complete": review_complete,
+            "redirect_url": url_for("web.sync_status_page", job_id=job_id),
+        }, 200
+
     flash(message, "success")
-    if job.get("sync", {}).get("summary", {}).get("low_confidence", 0) == 0:
+    if review_complete:
         flash(
             "Low-confidence review is complete. Commit the playlist to Navidrome "
             "when you're ready.",
@@ -515,7 +544,7 @@ def sync_review_action(job_id: str) -> ResponseReturnValue:
                 artist=artist,
                 album=album,
             )
-            flash("Updated the candidate matches for that low-confidence track.", "success")
+            message = "Updated the candidate matches for that low-confidence track."
         elif action == "download":
             candidate_id = request.form.get(
                 "candidate_id", request.form.get("deezer_id", "")
@@ -530,7 +559,7 @@ def sync_review_action(job_id: str) -> ResponseReturnValue:
                 artist=artist,
                 album=album,
             )
-            flash("Track resolved from the selected match.", "success")
+            message = "Track resolved from the selected match."
         elif action == "skip":
             job = skip_low_confidence_candidate(
                 job_id,
@@ -539,14 +568,27 @@ def sync_review_action(job_id: str) -> ResponseReturnValue:
                 artist=artist,
                 album=album,
             )
-            flash("Track marked as missing so you can keep going.", "success")
+            message = "Track marked as missing so you can keep going."
         else:
             raise ValueError("Unknown review action.")
     except Exception as exc:  # pragma: no cover - runtime/network dependent
-        flash(f"Could not update the low-confidence track: {exc}", "error")
+        error_message = f"Could not update the low-confidence track: {exc}"
+        if _wants_json_response():
+            return {"ok": False, "error": error_message}, 400
+        flash(error_message, "error")
         return redirect(url_for("web.sync_status_page", job_id=job_id))
 
-    if job.get("sync", {}).get("summary", {}).get("low_confidence", 0) == 0:
+    review_complete = job.get("sync", {}).get("summary", {}).get("low_confidence", 0) == 0
+    if _wants_json_response():
+        return {
+            "ok": True,
+            "message": message,
+            "review_complete": review_complete,
+            "redirect_url": url_for("web.sync_status_page", job_id=job_id),
+        }, 200
+
+    flash(message, "success")
+    if review_complete:
         flash(
             (
                 "Low-confidence review is complete. Commit the playlist to "

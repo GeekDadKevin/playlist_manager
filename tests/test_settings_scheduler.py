@@ -135,7 +135,7 @@ def test_index_keeps_weekly_targets_visible_even_if_previously_imported(
     assert response.status_code == 200
     assert b"Weekly Exploration" in response.data
     assert b"Weekly Jams" in response.data
-    assert b"Daily Mix" not in response.data
+    assert b"Daily Mix" in response.data
 
 
 def test_run_scheduled_playlists_filters_to_weekly_targets(tmp_path) -> None:
