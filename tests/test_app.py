@@ -148,6 +148,8 @@ def test_sync_status_page_shows_low_confidence_review_controls(monkeypatch) -> N
                         "album": "Teardrop",
                         "score": 68.5,
                         "deezer_id": 12345,
+                        "provider": "deezer",
+                        "provider_label": "Deezer",
                     },
                     "candidates": [
                         {
@@ -156,7 +158,18 @@ def test_sync_status_page_shows_low_confidence_review_controls(monkeypatch) -> N
                             "album": "Teardrop",
                             "score": 68.5,
                             "deezer_id": 12345,
-                        }
+                            "provider": "deezer",
+                            "provider_label": "Deezer",
+                        },
+                        {
+                            "artist": "Massive Attack",
+                            "title": "Teardrop",
+                            "album": "SoundCloud",
+                            "score": 91.0,
+                            "id": "soundcloud:123",
+                            "provider": "soundcloud",
+                            "provider_label": "SoundCloud",
+                        },
                     ],
                 }
             ],
@@ -171,6 +184,54 @@ def test_sync_status_page_shows_low_confidence_review_controls(monkeypatch) -> N
     assert b"Resolve low-confidence tracks before Navidrome export" in response.data
     assert b"Search again" in response.data
     assert b"Download selected match" in response.data
+    assert b"Accept all remaining as missing" in response.data
+    assert b"Try SoundCloud for all low-confidence tracks" in response.data
+    assert b"[Deezer]" in response.data
+    assert b"[SoundCloud]" in response.data
+    assert b"SoundCloud review progress" not in response.data
+
+
+def test_sync_review_bulk_skip_action_redirects_back_to_status(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test-secret")
+    client = app.test_client()
+
+    monkeypatch.setattr(
+        "app.routes.web.skip_all_low_confidence_candidates",
+        lambda job_id: {"sync": {"summary": {"low_confidence": 0}}},
+    )
+
+    response = client.post(
+        "/sync/job-low/review/bulk",
+        data={"action": "skip_all"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/sync/job-low")
+
+
+def test_sync_review_bulk_soundcloud_action_redirects_back_to_status(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, SECRET_KEY="test-secret")
+    client = app.test_client()
+
+    monkeypatch.setattr(
+        "app.routes.web.try_soundcloud_for_low_confidence_candidates",
+        lambda job_id: {
+            "sync": {"summary": {"low_confidence": 1}},
+            "bulk_summary": {"downloaded": 1, "remaining": 1},
+        },
+    )
+
+    response = client.post(
+        "/sync/job-low/review/bulk",
+        data={"action": "soundcloud_all"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/sync/job-low")
 
 
 def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_path) -> None:

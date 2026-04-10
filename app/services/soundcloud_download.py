@@ -97,13 +97,19 @@ class SoundCloudDownloadService:
                 "`SOUNDCLOUD_FALLBACK_ENABLED=1` to use it."
             )
 
+        normalized_match = {
+            **match,
+            "album": self._preferred_album_name(match),
+            "provider": "soundcloud",
+            "provider_label": "SoundCloud",
+        }
         result: dict[str, Any] = {
             "track": track.to_dict(),
             "queries": build_search_queries(track),
             "status": "not_found",
             "message": "No SoundCloud match found.",
-            "match": {**match, "provider": "soundcloud", "provider_label": "SoundCloud"},
-            "candidates": [{**match, "provider": "soundcloud", "provider_label": "SoundCloud"}],
+            "match": normalized_match,
+            "candidates": [normalized_match],
         }
 
         in_library = self._find_in_library(match, track)
@@ -139,6 +145,8 @@ class SoundCloudDownloadService:
 
         link = str(info.get("webpage_url") or info.get("original_url") or info.get("url") or "")
         soundcloud_id = str(info.get("id") or "").strip()
+        raw_album = str(info.get("album") or info.get("playlist_title") or "").strip()
+        album = raw_album or "SoundCloud"
         return {
             "id": f"soundcloud:{soundcloud_id or link}",
             "provider": "soundcloud",
@@ -148,7 +156,8 @@ class SoundCloudDownloadService:
             "artist": str(
                 info.get("artist") or info.get("creator") or info.get("uploader") or ""
             ).strip(),
-            "album": str(info.get("album") or info.get("playlist_title") or "").strip(),
+            "album": album,
+            "album_fallback_used": not bool(raw_album),
             "duration_seconds": int(duration) if isinstance(duration, (int, float)) else None,
             "link": link,
             "source_kind": "external",
@@ -205,7 +214,7 @@ class SoundCloudDownloadService:
             output_path,
             title=str(match.get("title") or track.title or output_path.stem),
             artist=str(match.get("artist") or track.artist or ""),
-            album=str(match.get("album") or track.album or "SoundCloud"),
+            album=self._preferred_album_name(match),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="soundcloud",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
@@ -235,9 +244,24 @@ class SoundCloudDownloadService:
 
     def _build_stem_path(self, match: dict[str, Any], track: PlaylistTrack) -> Path:
         artist = _safe_name(str(match.get("artist") or track.artist or "Unknown Artist"))
-        album = _safe_name(str(match.get("album") or track.album or "SoundCloud"))
+        album = _safe_name(self._preferred_album_name(match))
         title = _safe_name(str(match.get("title") or track.title or "Unknown Track"))
         return Path(self.download_dir) / artist / album / title
+
+    def _preferred_album_name(self, match: dict[str, Any]) -> str:
+        album = str(match.get("album") or "").strip()
+        return album or "SoundCloud"
+
+    def _candidate_album_names(self, match: dict[str, Any], track: PlaylistTrack) -> list[str]:
+        names: list[str] = []
+        preferred = self._preferred_album_name(match)
+        if preferred:
+            names.append(preferred)
+
+        track_album = str(track.album or "").strip()
+        if track_album and track_album not in names:
+            names.append(track_album)
+        return names
 
     def _find_in_library(self, match: dict[str, Any], track: PlaylistTrack) -> Path | None:
         if not self.navidrome_music_root:
@@ -248,24 +272,24 @@ class SoundCloudDownloadService:
             return None
 
         artist = _safe_name(str(match.get("artist") or track.artist or ""))
-        album = _safe_name(str(match.get("album") or track.album or ""))
         title_key = normalize_text(str(match.get("title") or track.title or ""))
         if not artist or not title_key:
             return None
 
-        album_dir = root / artist / album
-        if not album_dir.is_dir():
-            return None
+        for album_name in self._candidate_album_names(match, track):
+            album_dir = root / artist / _safe_name(album_name)
+            if not album_dir.is_dir():
+                continue
 
-        try:
-            for candidate in album_dir.iterdir():
-                if not candidate.is_file() or candidate.suffix.lower() not in _AUDIO_EXTENSIONS:
-                    continue
-                stem_key = normalize_text(candidate.stem)
-                if title_key in stem_key or stem_key == title_key:
-                    return candidate
-        except OSError:
-            return None
+            try:
+                for candidate in album_dir.iterdir():
+                    if not candidate.is_file() or candidate.suffix.lower() not in _AUDIO_EXTENSIONS:
+                        continue
+                    stem_key = normalize_text(candidate.stem)
+                    if title_key in stem_key or stem_key == title_key:
+                        return candidate
+            except OSError:
+                return None
         return None
 
     def _find_existing(self, match: dict[str, Any], track: PlaylistTrack) -> Path | None:

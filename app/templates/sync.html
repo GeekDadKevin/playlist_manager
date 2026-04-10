@@ -56,10 +56,18 @@
         <h2>Resolve low-confidence tracks before Navidrome export</h2>
         <p>
           Anything listed here scored below your Deezer match threshold, so the app paused the Navidrome playlist export.
-          Pick the right Deezer match, search again to also see SoundCloud options, or keep the track marked missing for now.
+          Use the choices below to pick the Deezer or SoundCloud result you want for each song, or keep the track marked missing for now.
         </p>
 
         {% if low_confidence_items %}
+          <form action="{{ url_for('web.sync_review_bulk_action', job_id=job.job_id) }}" method="post" class="stack">
+            <div class="action-row">
+              <button type="submit" name="action" value="skip_all">Accept all remaining as missing</button>
+              <button type="submit" name="action" value="soundcloud_all">Try SoundCloud for all low-confidence tracks</button>
+            </div>
+            <p class="help-text">The SoundCloud bulk action auto-picks any high-confidence SoundCloud matches and then refreshes the per-song sections below so you can choose from the remaining Deezer and SoundCloud options.</p>
+          </form>
+
           <div class="review-grid">
             {% for item in low_confidence_items %}
               {% set candidates = item.candidates or ([item.match] if item.match else []) %}
@@ -215,6 +223,7 @@
         </tr>
       `).join('');
     }
+
 
     function updatePage(job) {
       const summary = job.sync.summary;

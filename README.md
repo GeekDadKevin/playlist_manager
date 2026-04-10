@@ -65,7 +65,7 @@ SOUNDCLOUD_FALLBACK_ENABLED=1
 SOUNDCLOUD_MATCH_THRESHOLD=72
 ```
 
-Sync is intentionally **sequential**: the app waits for each Deezer track to finish before moving to the next, then records per-track completion feedback. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud result through `yt-dlp` during manual review.
+Sync is intentionally **sequential**: the app waits for each Deezer track to finish before moving to the next, then records per-track completion feedback. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud result through `yt-dlp` during manual review, or accept the remaining low-confidence items as missing in one step.
 
 ### Docker Compose
 

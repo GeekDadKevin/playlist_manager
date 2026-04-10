@@ -181,6 +181,157 @@ def skip_low_confidence_candidate(
         return deepcopy(job)
 
 
+def skip_all_low_confidence_candidates(job_id: str) -> dict[str, Any]:
+    with _JOBS_LOCK:
+        job = _require_job_unlocked(job_id)
+        results = job.get("sync", {}).setdefault("results", [])
+        skipped = 0
+        for item in results:
+            if str(item.get("status", "")).strip() != "low_confidence":
+                continue
+            item["track"] = _track_from_item(item).to_dict()
+            item["status"] = "not_found"
+            item["message"] = "Accepted as missing during bulk review."
+            item["completed_at"] = _utc_timestamp()
+            skipped += 1
+        _refresh_job_state_unlocked(job_id)
+        snapshot = deepcopy(job)
+
+    snapshot["bulk_summary"] = {"skipped": skipped}
+    return snapshot
+
+
+def try_soundcloud_for_low_confidence_candidates(job_id: str) -> dict[str, Any]:
+    with _JOBS_LOCK:
+        job = _require_job_unlocked(job_id)
+        context = _JOB_CONTEXT.get(job_id, {})
+        service = context.get("service")
+        review_items = [
+            (index, deepcopy(item))
+            for index, item in enumerate(job.get("sync", {}).get("results", []), start=1)
+            if str(item.get("status", "")).strip() == "low_confidence"
+        ]
+
+    if service is None:
+        raise ValueError("This sync job no longer has an active Deezer session for review.")
+    if not service.soundcloud_service or not service.soundcloud_service.is_configured():
+        raise ValueError(
+            "SoundCloud review is unavailable. Install `yt-dlp` and keep "
+            "`SOUNDCLOUD_FALLBACK_ENABLED=1` to use it."
+        )
+
+    with _JOBS_LOCK:
+        job = _require_job_unlocked(job_id)
+        results = job.get("sync", {}).setdefault("results", [])
+        for item_index, _item in review_items:
+            target = results[item_index - 1]
+            target["review_status"] = "queued"
+            target["message"] = "Queued for automatic SoundCloud review."
+            target["completed_at"] = _utc_timestamp()
+        _refresh_job_state_unlocked(job_id)
+
+    summary = {
+        "attempted": len(review_items),
+        "downloaded": 0,
+        "remaining": 0,
+        "failed": 0,
+    }
+
+    for item_index, item in review_items:
+        track = _track_from_item(item)
+
+        with _JOBS_LOCK:
+            job = _require_job_unlocked(job_id)
+            target = job.get("sync", {}).setdefault("results", [])[item_index - 1]
+            target["track"] = track.to_dict()
+            target["review_status"] = "searching"
+            target["message"] = "Trying SoundCloud for this track now…"
+            target["completed_at"] = _utc_timestamp()
+            _refresh_job_state_unlocked(job_id)
+
+        try:
+            candidates = service.search_track(track, limit=8, include_soundcloud=True)
+        except Exception as exc:
+            with _JOBS_LOCK:
+                job = _require_job_unlocked(job_id)
+                target = job.get("sync", {}).setdefault("results", [])[item_index - 1]
+                target["track"] = track.to_dict()
+                target["status"] = "low_confidence"
+                target["review_status"] = "failed"
+                target["message"] = f"SoundCloud search failed: {exc}"
+                target["completed_at"] = _utc_timestamp()
+                _refresh_job_state_unlocked(job_id)
+            summary["failed"] += 1
+            continue
+
+        soundcloud_match = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.get("provider") == "soundcloud" and candidate.get("accepted", False)
+            ),
+            None,
+        )
+
+        if soundcloud_match is None:
+            with _JOBS_LOCK:
+                job = _require_job_unlocked(job_id)
+                target = job.get("sync", {}).setdefault("results", [])[item_index - 1]
+                target["track"] = track.to_dict()
+                target["candidates"] = candidates[:8]
+                if candidates:
+                    target["match"] = candidates[0]
+                    target["message"] = (
+                        "No accepted SoundCloud match was found automatically. "
+                        "Review the candidates below or keep the track missing."
+                    )
+                else:
+                    target["message"] = (
+                        "No Deezer or SoundCloud candidates were found for this track."
+                    )
+                target["status"] = "low_confidence"
+                target["review_status"] = "needs_attention"
+                target["completed_at"] = _utc_timestamp()
+                _refresh_job_state_unlocked(job_id)
+            continue
+
+        try:
+            resolved = service.resolve_track_selection(track, soundcloud_match)
+        except Exception as exc:
+            with _JOBS_LOCK:
+                job = _require_job_unlocked(job_id)
+                target = job.get("sync", {}).setdefault("results", [])[item_index - 1]
+                target["track"] = track.to_dict()
+                target["match"] = soundcloud_match
+                target["candidates"] = candidates[:8]
+                target["status"] = "low_confidence"
+                target["review_status"] = "failed"
+                target["message"] = f"SoundCloud download failed: {exc}"
+                target["completed_at"] = _utc_timestamp()
+                _refresh_job_state_unlocked(job_id)
+            summary["failed"] += 1
+            continue
+
+        resolved["index"] = item_index
+        resolved["completed_at"] = _utc_timestamp()
+        resolved["candidates"] = candidates[:8]
+        resolved["review_status"] = "done"
+
+        with _JOBS_LOCK:
+            job = _require_job_unlocked(job_id)
+            job.get("sync", {}).setdefault("results", [])[item_index - 1] = resolved
+            _refresh_job_state_unlocked(job_id)
+
+        summary["downloaded"] += 1
+
+    with _JOBS_LOCK:
+        snapshot = deepcopy(_require_job_unlocked(job_id))
+
+    summary["remaining"] = int(snapshot.get("sync", {}).get("summary", {}).get("low_confidence", 0))
+    snapshot["bulk_summary"] = summary
+    return snapshot
+
+
 def export_sync_job_playlist(job_id: str) -> dict[str, Any]:
     with _JOBS_LOCK:
         job = _require_job_unlocked(job_id)

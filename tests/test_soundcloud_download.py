@@ -43,4 +43,23 @@ def test_soundcloud_search_track_returns_ranked_match() -> None:
 
     assert ranked[0]["provider"] == "soundcloud"
     assert ranked[0]["title"] == "Teardrop"
+    assert ranked[0]["album"] == "SoundCloud"
     assert ranked[0]["accepted"] is True
+
+
+def test_soundcloud_uses_soundcloud_album_when_provider_album_missing(tmp_path) -> None:
+    service = SoundCloudDownloadService(
+        download_dir=str(tmp_path),
+        extractor_factory=lambda opts: StubYDL(opts, {"entries": []}),
+    )
+
+    stem_path = service._build_stem_path(
+        {
+            "title": "Teardrop",
+            "artist": "Massive Attack",
+            "album": "",
+        },
+        PlaylistTrack(title="Teardrop", artist="Massive Attack", album="Mezzanine"),
+    )
+
+    assert stem_path == tmp_path / "Massive Attack" / "SoundCloud" / "Teardrop"

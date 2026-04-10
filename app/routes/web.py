@@ -45,8 +45,10 @@ from app.services.sync_jobs import (
     get_sync_job,
     resolve_low_confidence_candidate,
     search_low_confidence_candidates,
+    skip_all_low_confidence_candidates,
     skip_low_confidence_candidate,
     start_sync_job,
+    try_soundcloud_for_low_confidence_candidates,
 )
 
 web_bp = Blueprint("web", __name__)
@@ -460,6 +462,40 @@ def sync_status(job_id: str) -> ResponseReturnValue:
     if job is None:
         return {"error": "Sync job not found."}, 404
     return job, 200
+
+
+@web_bp.post("/sync/<job_id>/review/bulk")
+def sync_review_bulk_action(job_id: str) -> ResponseReturnValue:
+    action = request.form.get("action", "").strip().lower()
+
+    try:
+        if action == "skip_all":
+            job = skip_all_low_confidence_candidates(job_id)
+            skipped = int(job.get("bulk_summary", {}).get("skipped", 0))
+            message = f"Accepted {skipped} low-confidence track(s) as missing."
+        elif action == "soundcloud_all":
+            job = try_soundcloud_for_low_confidence_candidates(job_id)
+            summary = job.get("bulk_summary", {})
+            message = (
+                "SoundCloud attempt finished: "
+                f"{int(summary.get('downloaded', 0))} downloaded, "
+                f"{int(summary.get('remaining', 0))} still need review."
+            )
+        else:
+            raise ValueError("Unknown bulk review action.")
+    except Exception as exc:  # pragma: no cover - runtime/network dependent
+        flash(f"Could not update the low-confidence tracks: {exc}", "error")
+        return redirect(url_for("web.sync_status_page", job_id=job_id))
+
+    flash(message, "success")
+    if job.get("sync", {}).get("summary", {}).get("low_confidence", 0) == 0:
+        flash(
+            "Low-confidence review is complete. Commit the playlist to Navidrome "
+            "when you're ready.",
+            "success",
+        )
+
+    return redirect(url_for("web.sync_status_page", job_id=job_id))
 
 
 @web_bp.post("/sync/<job_id>/review")
