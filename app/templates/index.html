@@ -86,7 +86,7 @@
         {% endif %}
 
         <button type="submit">Import playlist and start sync</button>
-        <p class="help-text">Importing jumps straight to the live sync page, shows downloads vs already-available tracks, and then overwrites the matching Navidrome playlist file when the run finishes.</p>
+        <p class="help-text">Importing jumps straight to the live sync page, shows downloads vs already-available tracks, and pauses for manual review if any Deezer match comes back low-confidence before the Navidrome playlist is written. That review step can also offer SoundCloud choices.</p>
       </form>
     </section>
 
@@ -94,14 +94,15 @@
       <h3>What sync setup does</h3>
       <p>
         This tab does not start anything by itself. It simply explains what the app needs before
-        the live sync step can match songs, download missing tracks directly from Deezer, and
-        then update the Navidrome playlist file for you.
+        the live sync step can match songs, download missing tracks from Deezer, and then update
+        the Navidrome playlist file for you.
       </p>
       <ul>
-        <li>Set <code>DEEZER_ARL</code> to a valid Deezer session cookie.</li>
+        <li>Set <code>DEEZER_ARL</code> for the normal live download sync.</li>
         <li>Point <code>NAVIDROME_MUSIC_ROOT</code> at the shared folder where your library lives and new files should be saved.</li>
-        <li>Optionally tune <code>DEEZER_QUALITY</code> and <code>DEEZER_MATCH_THRESHOLD</code>.</li>
-        <li>Once configured, importing a playlist jumps straight to Sync status, triggers downloads, and refreshes the Navidrome playlist file automatically.</li>
+        <li>Leave <code>SOUNDCLOUD_FALLBACK_ENABLED=1</code> if you want SoundCloud offered during low-confidence manual review.</li>
+        <li>Optionally tune <code>DEEZER_QUALITY</code>, <code>DEEZER_MATCH_THRESHOLD</code>, and <code>SOUNDCLOUD_MATCH_THRESHOLD</code>.</li>
+        <li>Once configured, importing a playlist jumps straight to Sync status, triggers Deezer downloads, and asks you to resolve any low-confidence tracks before the Navidrome playlist is committed.</li>
       </ul>
     </section>
   </div>

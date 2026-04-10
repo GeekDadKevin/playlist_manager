@@ -40,7 +40,14 @@ from app.services.settings_store import (
 from app.services.settings_store import (
     save_settings as save_app_settings,
 )
-from app.services.sync_jobs import get_sync_job, start_sync_job
+from app.services.sync_jobs import (
+    export_sync_job_playlist,
+    get_sync_job,
+    resolve_low_confidence_candidate,
+    search_low_confidence_candidates,
+    skip_low_confidence_candidate,
+    start_sync_job,
+)
 
 web_bp = Blueprint("web", __name__)
 
@@ -416,7 +423,8 @@ def _start_sync_for_upload(upload, *, max_tracks: int) -> str:
     service = DeezerDownloadService.from_config(current_app.config)
     if not service.is_configured():
         raise ValueError(
-            "Configure `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable live downloads."
+            "Configure `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable live downloads. "
+            "SoundCloud is only used during low-confidence review."
         )
 
     job_id = start_sync_job(
@@ -452,6 +460,83 @@ def sync_status(job_id: str) -> ResponseReturnValue:
     if job is None:
         return {"error": "Sync job not found."}, 404
     return job, 200
+
+
+@web_bp.post("/sync/<job_id>/review")
+def sync_review_action(job_id: str) -> ResponseReturnValue:
+    action = request.form.get("action", "search").strip().lower()
+    item_index = request.form.get("item_index", type=int) or 0
+    title = request.form.get("title", "").strip()
+    artist = request.form.get("artist", "").strip()
+    album = request.form.get("album", "").strip()
+
+    try:
+        if action == "search":
+            job = search_low_confidence_candidates(
+                job_id,
+                item_index,
+                title=title,
+                artist=artist,
+                album=album,
+            )
+            flash("Updated the candidate matches for that low-confidence track.", "success")
+        elif action == "download":
+            candidate_id = request.form.get(
+                "candidate_id", request.form.get("deezer_id", "")
+            ).strip()
+            if not candidate_id:
+                raise ValueError("Choose a candidate first.")
+            job = resolve_low_confidence_candidate(
+                job_id,
+                item_index,
+                deezer_id=candidate_id,
+                title=title,
+                artist=artist,
+                album=album,
+            )
+            flash("Track resolved from the selected match.", "success")
+        elif action == "skip":
+            job = skip_low_confidence_candidate(
+                job_id,
+                item_index,
+                title=title,
+                artist=artist,
+                album=album,
+            )
+            flash("Track marked as missing so you can keep going.", "success")
+        else:
+            raise ValueError("Unknown review action.")
+    except Exception as exc:  # pragma: no cover - runtime/network dependent
+        flash(f"Could not update the low-confidence track: {exc}", "error")
+        return redirect(url_for("web.sync_status_page", job_id=job_id))
+
+    if job.get("sync", {}).get("summary", {}).get("low_confidence", 0) == 0:
+        flash(
+            (
+                "Low-confidence review is complete. Commit the playlist to "
+                "Navidrome when you're ready."
+            ),
+            "success",
+        )
+
+    return redirect(url_for("web.sync_status_page", job_id=job_id))
+
+
+@web_bp.post("/sync/<job_id>/export")
+def sync_export_playlist(job_id: str) -> ResponseReturnValue:
+    try:
+        job = export_sync_job_playlist(job_id)
+        export_result = job.get("sync", {}).get("playlist_export", {})
+    except Exception as exc:  # pragma: no cover - runtime/filesystem dependent
+        flash(f"Could not commit the playlist to Navidrome: {exc}", "error")
+    else:
+        flash(
+            f"Navidrome playlist updated: {export_result.get('filename', 'playlist.m3u')} "
+            f"({export_result.get('entry_count', 0)} track(s)).",
+            "success",
+        )
+
+    return redirect(url_for("web.sync_status_page", job_id=job_id))
 
 
 @web_bp.get("/logs")

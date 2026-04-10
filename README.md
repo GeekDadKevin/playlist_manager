@@ -1,6 +1,6 @@
 # JSPF Converter / Playlist Sync
 
-A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, Navidrome missing-files `csv`, or ListenBrainz playlist sources, reviewing track metadata, downloading missing tracks directly from Deezer, and writing Navidrome-friendly playlist files.
+A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, Navidrome missing-files `csv`, or ListenBrainz playlist sources, reviewing track metadata, downloading missing tracks from Deezer and SoundCloud, and writing Navidrome-friendly playlist files.
 
 ## Stack
 
@@ -52,7 +52,7 @@ LISTENBRAINZ_AUTH_TOKEN=your_token_if_needed
 - You normally **do not need** playlist-type, playlist-ID, JSPF-URL, or upload-folder env overrides anymore; the UI picker and pasted URL field handle that workflow directly.
 - On the review screen, you can either **Create/update Navidrome playlist now** or start the live download sync job.
 
-### Deezer sync configuration
+### Live sync provider configuration
 
 To enable real match-and-download sync, set these values in `.env`:
 
@@ -61,9 +61,11 @@ DEEZER_ARL=your_deezer_session_cookie
 NAVIDROME_MUSIC_ROOT=/absolute/path/on/your/docker-host/music/root
 DEEZER_QUALITY=FLAC
 DEEZER_MATCH_THRESHOLD=72
+SOUNDCLOUD_FALLBACK_ENABLED=1
+SOUNDCLOUD_MATCH_THRESHOLD=72
 ```
 
-Sync is intentionally **sequential**: the app waits for each Deezer download to finish before moving to the next track, then records per-track completion feedback.
+Sync is intentionally **sequential**: the app waits for each Deezer track to finish before moving to the next, then records per-track completion feedback. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud result through `yt-dlp` during manual review.
 
 ### Docker Compose
 
@@ -92,7 +94,7 @@ When a sync completes, the app writes a Navidrome-compatible playlist there, and
 
 ```text
 app/
-  matching/      Deezer-oriented normalization and ranking helpers
+  matching/      Multi-provider normalization and ranking helpers
   parsers/       M3U and JSPF ingestion
   routes/        Web and API endpoints
   services/      ListenBrainz, download, and playlist workflow helpers
@@ -102,5 +104,5 @@ tests/           Parser, matching, and app smoke tests
 
 ## Notes
 
-- The real sync path now uses the built-in Deezer search and download workflow.
-- Deezer search support is structured for balanced fuzzy matching, with low-confidence matches skipped instead of forced.
+- The real sync path now uses the built-in Deezer workflow, with optional SoundCloud choices only during low-confidence manual review.
+- Matching is structured for balanced fuzzy search, with low-confidence matches skipped instead of forced.

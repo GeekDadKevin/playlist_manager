@@ -15,6 +15,7 @@ from app.matching import rank_candidates
 from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
 from app.services.song_metadata import write_flac_tags, write_song_metadata_xml
+from app.services.soundcloud_download import SoundCloudDownloadService
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 class DeezerDownloadService:
-    """Downloads tracks directly from Deezer using ARL authentication."""
+    """Downloads tracks from Deezer and can offer SoundCloud during review."""
 
     def __init__(
         self,
@@ -37,6 +38,7 @@ class DeezerDownloadService:
         quality: str = "FLAC",
         match_threshold: float = 72.0,
         transport: httpx.BaseTransport | None = None,
+        soundcloud_service: SoundCloudDownloadService | None = None,
     ) -> None:
         self.arl = arl.strip()
         self.download_dir = download_dir
@@ -44,6 +46,7 @@ class DeezerDownloadService:
         self.quality = quality.upper()
         self.match_threshold = match_threshold
         self.transport = transport
+        self.soundcloud_service = soundcloud_service
         self._api_token = ""
         self._license_token = ""
         self._gw_cookies: dict[str, str] = {}
@@ -51,19 +54,53 @@ class DeezerDownloadService:
     @classmethod
     def from_config(cls, config: Any) -> DeezerDownloadService:
         music_root = str(config.get("NAVIDROME_MUSIC_ROOT", "/navidrome/root"))
+        soundcloud_service = SoundCloudDownloadService.from_config(config)
         return cls(
             arl=str(config.get("DEEZER_ARL", "")),
             download_dir=music_root,
             navidrome_music_root=music_root,
             quality=str(config.get("DEEZER_QUALITY", "FLAC")),
             match_threshold=float(config.get("DEEZER_MATCH_THRESHOLD", 72.0)),
+            soundcloud_service=soundcloud_service,
         )
 
     def is_configured(self) -> bool:
         return bool(self.arl and self.download_dir)
 
-    def search_track(self, track: PlaylistTrack, limit: int = 10) -> list[dict[str, Any]]:
-        return self._search_track(track, limit=limit)
+    def search_track(
+        self,
+        track: PlaylistTrack,
+        limit: int = 10,
+        *,
+        include_soundcloud: bool = False,
+    ) -> list[dict[str, Any]]:
+        return self._search_track(track, limit=limit, include_soundcloud=include_soundcloud)
+
+    def resolve_track_selection(
+        self,
+        track: PlaylistTrack,
+        match: dict[str, Any],
+    ) -> dict[str, Any]:
+        provider = str(match.get("provider", "deezer")).strip().lower()
+        if provider == "soundcloud":
+            if not self.soundcloud_service or not self.soundcloud_service.is_configured():
+                raise ValueError("SoundCloud fallback is not configured for this sync job.")
+            return self.soundcloud_service.resolve_track_selection(track, match)
+
+        self._validate_configuration()
+        if not self.arl:
+            raise ValueError("Set `DEEZER_ARL` to download tracks from Deezer.")
+        self._ensure_authenticated()
+
+        result = self._build_result(track)
+        result["match"] = {
+            **match,
+            "accepted": True,
+            "provider": "deezer",
+            "provider_label": "Deezer",
+        }
+        result["candidates"] = [result["match"]]
+        return self._finalize_selected_match(track, result, result["match"])
 
     def sync_tracks(
         self,
@@ -72,12 +109,17 @@ class DeezerDownloadService:
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         self._validate_configuration()
-        self._ensure_authenticated()
 
         started_at = _utc_timestamp()
         selected = tracks[:max_tracks] if max_tracks else tracks
-        log.info("Starting Deezer sync: %d track(s), quality=%s, threshold=%.0f",
-                 len(selected), self.quality, self.match_threshold)
+        provider_name = self._provider_name()
+        log.info(
+            "Starting sync: %d track(s), providers=%s, quality=%s, threshold=%.0f",
+            len(selected),
+            provider_name,
+            self.quality,
+            self.match_threshold,
+        )
         results: list[dict[str, Any]] = []
         summary = {
             "requested": len(selected),
@@ -101,20 +143,22 @@ class DeezerDownloadService:
                 summary[status] += 1
 
             if progress_callback is not None:
-                progress_callback({
-                    "mode": "download",
-                    "provider": "deezer",
-                    "threshold": self.match_threshold,
-                    "processing_mode": "sequential",
-                    "started_at": started_at,
-                    "completed_at": "",
-                    "summary": dict(summary),
-                    "results": list(results),
-                })
+                progress_callback(
+                    {
+                        "mode": "download",
+                        "provider": provider_name,
+                        "threshold": self.match_threshold,
+                        "processing_mode": "sequential",
+                        "started_at": started_at,
+                        "completed_at": "",
+                        "summary": dict(summary),
+                        "results": list(results),
+                    }
+                )
 
         final: dict[str, Any] = {
             "mode": "download",
-            "provider": "deezer",
+            "provider": provider_name,
             "threshold": self.match_threshold,
             "processing_mode": "sequential",
             "started_at": started_at,
@@ -132,66 +176,105 @@ class DeezerDownloadService:
 
     def _sync_single_track(self, track: PlaylistTrack) -> dict[str, Any]:
         log.info("Processing: %r by %r", track.title, track.artist)
-        result: dict[str, Any] = {
-            "track": track.to_dict(),
-            "queries": build_search_queries(track),
-            "status": "not_found",
-            "message": "No Deezer match found.",
-            "match": {},
-        }
+        result = self._build_result(track)
 
         try:
-            ranked = self._search_track(track)
+            ranked = self._search_track(track, include_soundcloud=False)
         except Exception as exc:
             log.error("Search failed for %r: %s", track.title, exc)
             result["status"] = "failed"
-            result["message"] = f"Deezer search error: {exc}"
+            result["message"] = f"Search error: {exc}"
             return result
 
         if not ranked:
             log.warning("No Deezer results for %r by %r", track.title, track.artist)
             return result
 
-        top = ranked[0]
+        top = next(
+            (
+                candidate
+                for candidate in ranked
+                if candidate.get("provider") == "deezer" and candidate.get("accepted")
+            ),
+            ranked[0],
+        )
         result["match"] = top
+        result["candidates"] = ranked[:8]
         log.info(
-            "Best match: %r by %r (score=%.1f, accepted=%s, deezer_id=%s)",
-            top.get("title"), top.get("artist"),
-            top.get("score", 0), top.get("accepted"), top.get("deezer_id"),
+            "Best match: %r by %r (provider=%s, score=%.1f, accepted=%s)",
+            top.get("title"),
+            top.get("artist"),
+            top.get("provider", "deezer"),
+            top.get("score", 0),
+            top.get("accepted"),
         )
 
         if not top.get("accepted", False):
             log.warning(
                 "Low confidence for %r — score %.1f < threshold %.0f",
-                track.title, top.get("score", 0), self.match_threshold,
+                track.title,
+                top.get("score", 0),
+                self.match_threshold,
             )
             result["status"] = "low_confidence"
-            result["message"] = "Best match was below the configured confidence threshold."
+            result["message"] = "Best Deezer match was below the configured confidence threshold."
             return result
 
-        deezer_id = top.get("deezer_id")
+        try:
+            resolved = self.resolve_track_selection(track, top)
+        except Exception as exc:
+            log.error(
+                "Selection failed for %r using %s: %s",
+                track.title,
+                top.get("provider", "deezer"),
+                exc,
+            )
+            result["status"] = "failed"
+            result["message"] = str(exc)
+            return result
+
+        resolved["candidates"] = ranked[:8]
+        return resolved
+
+    def _build_result(self, track: PlaylistTrack) -> dict[str, Any]:
+        return {
+            "track": track.to_dict(),
+            "queries": build_search_queries(track),
+            "status": "not_found",
+            "message": "No Deezer match found.",
+            "match": {},
+            "candidates": [],
+        }
+
+    def _finalize_selected_match(
+        self,
+        track: PlaylistTrack,
+        result: dict[str, Any],
+        match: dict[str, Any],
+    ) -> dict[str, Any]:
+        deezer_id = match.get("deezer_id")
         if not deezer_id:
             log.error("Match for %r has no deezer_id — cannot download", track.title)
             return result
 
-        in_library = self._find_in_library(top, track)
+        in_library = self._find_in_library(match, track)
         if in_library is not None:
             log.info("Already in library: %s", in_library)
             result["status"] = "already_available"
             result["message"] = "Track is already in the Navidrome library."
-            result["match"] = {**top, "path": str(in_library)}
+            result["match"] = {**match, "path": str(in_library)}
             return result
 
-        existing = self._find_existing(top, track)
+        existing = self._find_existing(match, track)
         if existing is not None:
             log.info("Already downloaded: %s", existing)
             result["status"] = "already_available"
             result["message"] = "Track is already in the download directory."
-            result["match"] = {**top, "path": str(existing)}
+            result["match"] = {**match, "path": str(existing)}
             return result
 
         try:
-            file_path, metadata_path = self._download_track(deezer_id, top, track)
+            file_path, metadata_path = self._download_track(deezer_id, match, track)
         except Exception as exc:
             log.error("Download failed for %r (id=%s): %s", track.title, deezer_id, exc)
             result["status"] = "failed"
@@ -201,8 +284,9 @@ class DeezerDownloadService:
         log.info("Downloaded: %s", file_path)
         result["status"] = "downloaded"
         result["message"] = "Track downloaded from Deezer."
-        result["match"] = {**top, "path": str(file_path)}
+        result["match"] = {**match, "path": str(file_path)}
         result["download"] = {
+            "provider": "deezer",
             "deezer_id": deezer_id,
             "path": str(file_path),
             "metadata_path": str(metadata_path),
@@ -214,21 +298,47 @@ class DeezerDownloadService:
     # Search
     # ------------------------------------------------------------------
 
-    def _search_track(self, track: PlaylistTrack, limit: int = 10) -> list[dict[str, Any]]:
-        """Try each query variant, return the best-ranked results found."""
+    def _search_track(
+        self,
+        track: PlaylistTrack,
+        limit: int = 10,
+        *,
+        include_soundcloud: bool = False,
+    ) -> list[dict[str, Any]]:
+        deezer_ranked = self._search_deezer_candidates(track, limit=limit)
+        if not include_soundcloud:
+            return deezer_ranked
+
+        soundcloud_ranked: list[dict[str, Any]] = []
+        if self.soundcloud_service and self.soundcloud_service.is_configured():
+            try:
+                soundcloud_ranked = self.soundcloud_service.search_track(track, limit=limit)
+            except Exception as exc:
+                log.warning("SoundCloud search failed for %r: %s", track.title, exc)
+        return self._merge_candidates(deezer_ranked, soundcloud_ranked)
+
+    def _search_deezer_candidates(
+        self,
+        track: PlaylistTrack,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Try each Deezer query variant and return the best-ranked results found."""
+        if not self.arl:
+            return []
+
         best: list[dict[str, Any]] = []
         queries = build_search_queries(track)
         log.debug("Search queries for %r: %s", track.title, queries)
         for query in queries:
             candidates = self._deezer_search(query, limit)
-            log.debug("Query %r → %d candidate(s)", query, len(candidates))
+            log.debug("Query %r → %d Deezer candidate(s)", query, len(candidates))
             if not candidates:
                 continue
             ranked = rank_candidates(track, candidates, threshold=self.match_threshold)
             if ranked and (not best or ranked[0]["score"] > best[0]["score"]):
                 best = ranked
             if ranked and ranked[0]["accepted"]:
-                log.debug("Accepted match found on query %r", query)
+                log.debug("Accepted Deezer match found on query %r", query)
                 break
         return best
 
@@ -244,6 +354,8 @@ class DeezerDownloadService:
         return [
             {
                 "id": str(item.get("id", "")),
+                "provider": "deezer",
+                "provider_label": "Deezer",
                 "deezer_id": item.get("id"),
                 "link": item.get("link", ""),
                 "title": item.get("title", ""),
@@ -285,9 +397,7 @@ class DeezerDownloadService:
             data = payload.get("results", {})
 
         self._api_token = str(data.get("checkForm", ""))
-        self._license_token = str(
-            data.get("USER", {}).get("OPTIONS", {}).get("license_token", "")
-        )
+        self._license_token = str(data.get("USER", {}).get("OPTIONS", {}).get("license_token", ""))
         if not self._api_token or not self._license_token:
             raise RuntimeError(
                 "Deezer authentication failed — checkForm or license_token missing. "
@@ -340,8 +450,7 @@ class DeezerDownloadService:
                         {
                             "type": "FULL",
                             "formats": [
-                                {"cipher": "BF_CBC_STRIPE", "format": fmt}
-                                for fmt in formats
+                                {"cipher": "BF_CBC_STRIPE", "format": fmt} for fmt in formats
                             ],
                         }
                     ],
@@ -434,11 +543,7 @@ class DeezerDownloadService:
         deezer_id: int | str,
         fmt: str,
     ) -> Path:
-        annotation = (
-            str(track.extra.get("annotation", ""))
-            if isinstance(track.extra, dict)
-            else ""
-        )
+        annotation = str(track.extra.get("annotation", "")) if isinstance(track.extra, dict) else ""
         return write_song_metadata_xml(
             audio_path,
             title=str(match.get("title", "") or track.title or audio_path.stem),
@@ -465,11 +570,7 @@ class DeezerDownloadService:
         deezer_id: int | str,
         fmt: str,
     ) -> Path:
-        annotation = (
-            str(track.extra.get("annotation", ""))
-            if isinstance(track.extra, dict)
-            else ""
-        )
+        annotation = str(track.extra.get("annotation", "")) if isinstance(track.extra, dict) else ""
         return write_flac_tags(
             audio_path,
             title=str(match.get("title", "") or track.title or audio_path.stem),
@@ -552,10 +653,40 @@ class DeezerDownloadService:
     # Misc helpers
     # ------------------------------------------------------------------
 
+    def _provider_name(self) -> str:
+        return "deezer"
+
+    def _merge_candidates(self, *groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: dict[tuple[str, str], dict[str, Any]] = {}
+        for group in groups:
+            for candidate in group:
+                provider = str(candidate.get("provider", "deezer"))
+                candidate_id = str(
+                    candidate.get("id")
+                    or candidate.get("deezer_id")
+                    or candidate.get("soundcloud_id")
+                    or candidate.get("link")
+                    or ""
+                )
+                key = (provider, candidate_id)
+                existing = merged.get(key)
+                if existing is None or float(candidate.get("score", 0)) > float(
+                    existing.get("score", 0)
+                ):
+                    merged[key] = candidate
+        return sorted(
+            merged.values(),
+            key=lambda item: (
+                float(item.get("score", 0)),
+                1 if item.get("provider") == "deezer" else 0,
+            ),
+            reverse=True,
+        )
+
     def _quality_formats(self) -> list[str]:
         order = ["FLAC", "MP3_320", "MP3_128"]
         if self.quality in order:
-            return order[order.index(self.quality):]
+            return order[order.index(self.quality) :]
         return order
 
     def _client(self, timeout: float | None) -> httpx.Client:
@@ -568,13 +699,15 @@ class DeezerDownloadService:
     def _validate_configuration(self) -> None:
         if not self.is_configured():
             raise ValueError(
-                "Set `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable direct Deezer downloads."
+                "Set `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable live downloads. "
+                "SoundCloud is only offered during low-confidence manual review."
             )
 
 
 # ------------------------------------------------------------------
 # Crypto helpers
 # ------------------------------------------------------------------
+
 
 def _check_gw_error(payload: dict[str, Any]) -> None:
     """Raise if the Deezer GW response contains an error."""

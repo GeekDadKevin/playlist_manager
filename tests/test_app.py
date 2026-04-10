@@ -5,7 +5,7 @@ import io
 from app import create_app
 from app.models import PlaylistTrack, PlaylistUpload
 from app.services.ingest import save_uploaded_playlist
-from app.services.sync_jobs import create_sync_job
+from app.services.sync_jobs import _run_sync_job, create_sync_job, get_sync_job
 
 
 def test_index_and_health_routes() -> None:
@@ -86,6 +86,160 @@ def test_sync_status_page_and_json_endpoint() -> None:
     assert status_response.status_code == 200
     assert status_response.json["job_id"] == job_id
     assert status_response.json["sync"]["summary"]["requested"] == 1
+
+
+def test_sync_status_page_shows_low_confidence_review_controls(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    job = {
+        "job_id": "job-low",
+        "status": "completed",
+        "created_at": "",
+        "started_at": "",
+        "completed_at": "",
+        "progress_percent": 100,
+        "error": "",
+        "upload": {
+            "saved_path": "memory://demo",
+            "original_name": "demo.m3u",
+            "playlist_name": "Demo playlist",
+        },
+        "sync": {
+            "mode": "download",
+            "provider": "deezer",
+            "threshold": 72,
+            "processing_mode": "sequential",
+            "started_at": "",
+            "completed_at": "",
+            "summary": {
+                "requested": 1,
+                "processed": 1,
+                "preview": 0,
+                "downloaded": 0,
+                "already_available": 0,
+                "low_confidence": 1,
+                "not_found": 0,
+                "failed": 0,
+            },
+            "playlist_export": {
+                "configured": True,
+                "written": False,
+                "pending_review": True,
+                "reason": (
+                    "Resolve the low-confidence tracks below before exporting "
+                    "this playlist to Navidrome."
+                ),
+            },
+            "results": [
+                {
+                    "index": 1,
+                    "status": "low_confidence",
+                    "message": "Best match was below the configured confidence threshold.",
+                    "track": {
+                        "artist": "Massive Attack",
+                        "title": "Teardrop",
+                        "album": "Mezzanine",
+                    },
+                    "match": {
+                        "artist": "Massive Attack",
+                        "title": "Teardrop",
+                        "album": "Teardrop",
+                        "score": 68.5,
+                        "deezer_id": 12345,
+                    },
+                    "candidates": [
+                        {
+                            "artist": "Massive Attack",
+                            "title": "Teardrop",
+                            "album": "Teardrop",
+                            "score": 68.5,
+                            "deezer_id": 12345,
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+    monkeypatch.setattr("app.routes.web.get_sync_job", lambda job_id: job)
+
+    response = client.get("/sync/job-low")
+
+    assert response.status_code == 200
+    assert b"Resolve low-confidence tracks before Navidrome export" in response.data
+    assert b"Search again" in response.data
+    assert b"Download selected match" in response.data
+
+
+def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_path) -> None:
+    class StubService:
+        def sync_tracks(self, tracks, max_tracks=None, progress_callback=None):
+            result = {
+                "mode": "download",
+                "provider": "deezer",
+                "threshold": 72,
+                "processing_mode": "sequential",
+                "started_at": "2026-04-09T00:00:00+00:00",
+                "completed_at": "2026-04-09T00:00:01+00:00",
+                "summary": {
+                    "requested": 1,
+                    "processed": 1,
+                    "preview": 0,
+                    "downloaded": 0,
+                    "already_available": 0,
+                    "low_confidence": 1,
+                    "not_found": 0,
+                    "failed": 0,
+                },
+                "results": [
+                    {
+                        "track": {"title": "Teardrop", "artist": "Massive Attack"},
+                        "status": "low_confidence",
+                        "message": "Best match was below the configured confidence threshold.",
+                        "match": {"title": "Teardrop", "artist": "Massive Attack", "score": 68.5},
+                        "candidates": [
+                            {
+                                "title": "Teardrop",
+                                "artist": "Massive Attack",
+                                "score": 68.5,
+                                "deezer_id": 12345,
+                            }
+                        ],
+                    }
+                ],
+            }
+            if progress_callback is not None:
+                progress_callback(result)
+            return result
+
+    upload = PlaylistUpload(
+        source_kind="upload",
+        original_name="demo.m3u",
+        playlist_name="Weekly Jams",
+        stored_name="demo-1234.m3u",
+        saved_path="memory://demo-1234",
+        tracks=[PlaylistTrack(title="Teardrop", artist="Massive Attack")],
+    )
+
+    job_id = create_sync_job(upload, max_tracks=1)
+    _run_sync_job(
+        job_id,
+        upload,
+        StubService(),
+        1,
+        str(tmp_path / "navidrome_playlists"),
+        "",
+    )
+
+    job = get_sync_job(job_id)
+
+    assert job is not None
+    assert job["status"] == "completed"
+    assert job["sync"]["playlist_export"]["written"] is False
+    assert job["sync"]["playlist_export"]["pending_review"] is True
+    assert not (tmp_path / "navidrome_playlists" / "Weekly Jams.m3u").exists()
 
 
 def test_index_keeps_link_to_active_sync_job() -> None:

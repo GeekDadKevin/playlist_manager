@@ -109,19 +109,39 @@ def sync_playlist() -> ResponseReturnValue:
         or current_app.config.get("NAVIDROME_PLAYLIST_DIR", "")
     ).strip()
     if navidrome_playlists_dir:
-        try:
-            response["playlist_export"] = export_navidrome_playlist(
-                playlist_dir=navidrome_playlists_dir,
-                playlist_name=playlist_name,
-                sync_results=response.get("results", []),
-            )
-        except Exception as exc:
+        summary = response.get("summary", {}) if isinstance(response, dict) else {}
+        if int(summary.get("low_confidence", 0)) > 0:
             response["playlist_export"] = {
                 "configured": True,
                 "written": False,
+                "pending_review": True,
                 "playlist_name": playlist_name,
-                "reason": str(exc),
+                "target_path": navidrome_playlists_dir,
+                "entry_count": int(summary.get("processed", 0)),
+                "playable_count": int(summary.get("downloaded", 0))
+                + int(summary.get("already_available", 0)),
+                "missing_count": int(summary.get("not_found", 0))
+                + int(summary.get("failed", 0))
+                + int(summary.get("low_confidence", 0)),
+                "reason": (
+                    "Resolve the low-confidence tracks in the web UI before "
+                    "exporting this playlist to Navidrome."
+                ),
             }
+        else:
+            try:
+                response["playlist_export"] = export_navidrome_playlist(
+                    playlist_dir=navidrome_playlists_dir,
+                    playlist_name=playlist_name,
+                    sync_results=response.get("results", []),
+                )
+            except Exception as exc:
+                response["playlist_export"] = {
+                    "configured": True,
+                    "written": False,
+                    "playlist_name": playlist_name,
+                    "reason": str(exc),
+                }
     return response, 200
 
 

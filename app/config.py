@@ -32,5 +32,9 @@ class Config:
     DEEZER_ARL = os.getenv("DEEZER_ARL", "")
     DEEZER_QUALITY = os.getenv("DEEZER_QUALITY", "FLAC").upper()
     DEEZER_MATCH_THRESHOLD = float(os.getenv("DEEZER_MATCH_THRESHOLD", "72"))
+    SOUNDCLOUD_FALLBACK_ENABLED = os.getenv("SOUNDCLOUD_FALLBACK_ENABLED", "1")
+    SOUNDCLOUD_MATCH_THRESHOLD = float(
+        os.getenv("SOUNDCLOUD_MATCH_THRESHOLD", str(DEEZER_MATCH_THRESHOLD))
+    )
     SETTINGS_FILE = os.getenv("SETTINGS_FILE", str(Path(DATA_DIR) / "settings.json"))
     PLAYLIST_DB_PATH = os.getenv("PLAYLIST_DB_PATH", str(Path(DATA_DIR) / "playlist_history.db"))

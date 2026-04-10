@@ -1,7 +1,7 @@
 [project]
 name = "jspf-converter"
 version = "0.1.0"
-description = "Flask playlist sync service for M3U, JSPF, ListenBrainz, and direct Deezer download workflows."
+description = "Flask playlist sync service for M3U, JSPF, ListenBrainz, Deezer, and SoundCloud download workflows."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "rapidfuzz<3.14",
     "waitress>=3.0.2",
+    "yt-dlp>=2024.12.13",
 ]
 
 [dependency-groups]

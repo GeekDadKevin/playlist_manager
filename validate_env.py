@@ -32,6 +32,14 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
         minimum=0.0,
         maximum=100.0,
     )
+    _validate_float(
+        values,
+        "SOUNDCLOUD_MATCH_THRESHOLD",
+        errors,
+        default=_get_value(values, "DEEZER_MATCH_THRESHOLD", "72"),
+        minimum=0.0,
+        maximum=100.0,
+    )
 
     required_paths = (
         ("DATA_DIR", _get_value(values, "DATA_DIR", "/app/data")),
@@ -80,9 +88,8 @@ def _get_value(values: Mapping[str, object], name: str, default: str = "") -> st
 
 
 def _get_playlist_dir_value(values: Mapping[str, object]) -> str:
-    return (
-        _get_value(values, "NAVIDROME_PLAYLIST_DIR")
-        or _get_value(values, "NAVIDROME_PLAYLISTS_DIR", "/navidrome/playlist")
+    return _get_value(values, "NAVIDROME_PLAYLIST_DIR") or _get_value(
+        values, "NAVIDROME_PLAYLISTS_DIR", "/navidrome/playlist"
     )
 
 

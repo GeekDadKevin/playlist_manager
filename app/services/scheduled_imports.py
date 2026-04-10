@@ -111,11 +111,33 @@ def run_scheduled_playlists(
                 sync_mode = "download-sync"
 
             if navidrome_dir:
-                export_result = export_navidrome_playlist(
-                    playlist_dir=navidrome_dir,
-                    playlist_name=upload.playlist_name or upload.original_name,
-                    sync_results=sync_results,
+                low_confidence_count = int(
+                    sync_snapshot.get("summary", {}).get("low_confidence", 0)
                 )
+                if low_confidence_count > 0:
+                    export_result = {
+                        "configured": True,
+                        "written": False,
+                        "pending_review": True,
+                        "playlist_name": upload.playlist_name or upload.original_name,
+                        "target_path": navidrome_dir,
+                        "entry_count": int(sync_snapshot.get("summary", {}).get("processed", 0)),
+                        "playable_count": int(sync_snapshot.get("summary", {}).get("downloaded", 0))
+                        + int(sync_snapshot.get("summary", {}).get("already_available", 0)),
+                        "missing_count": int(sync_snapshot.get("summary", {}).get("not_found", 0))
+                        + int(sync_snapshot.get("summary", {}).get("failed", 0))
+                        + low_confidence_count,
+                        "reason": (
+                            "Low-confidence tracks need manual review in the web UI "
+                            "before this playlist can be committed to Navidrome."
+                        ),
+                    }
+                else:
+                    export_result = export_navidrome_playlist(
+                        playlist_dir=navidrome_dir,
+                        playlist_name=upload.playlist_name or upload.original_name,
+                        sync_results=sync_results,
+                    )
             else:
                 export_result = {
                     "configured": False,

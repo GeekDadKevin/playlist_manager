@@ -3,9 +3,16 @@
 {% block title %}Live sync progress{% endblock %}
 
 {% block content %}
+  {% set low_confidence_items = job.sync.results | selectattr('status', 'equalto', 'low_confidence') | list %}
+  {% set pending_export = job.sync.playlist_export if job.sync.playlist_export else None %}
+  {% set show_review_tab = low_confidence_items or (job.status == 'completed' and pending_export and not pending_export.written) %}
+
   <div class="tab-shell" data-tabset>
     <div class="tab-list" role="tablist" aria-label="Sync workflow">
       <button type="button" class="tab-button is-active" data-tab-button="progress" data-tab-default aria-selected="true">Progress</button>
+      {% if show_review_tab %}
+        <button type="button" class="tab-button" data-tab-button="review" aria-selected="false">Review low-confidence</button>
+      {% endif %}
       <button type="button" class="tab-button" data-tab-button="results" aria-selected="false">Results</button>
     </div>
 
@@ -43,6 +50,84 @@
       <p id="playlist-export-note" class="help-text">{% if job.sync.playlist_export %}{% if job.sync.playlist_export.written %}Wrote {{ job.sync.playlist_export.entry_count }} track(s) to the Navidrome playlist file.{% if job.sync.playlist_export.missing_count %} {{ job.sync.playlist_export.missing_count }} still pending download.{% endif %}{% else %}{{ job.sync.playlist_export.reason or 'Navidrome playlist export is waiting for sync results.' }}{% endif %}{% endif %}</p>
       <p id="job-error" class="flash flash-error" {% if not job.error %}hidden{% endif %}>{{ job.error }}</p>
     </section>
+
+    {% if show_review_tab %}
+      <section class="card tab-panel" data-tab-panel="review" hidden>
+        <h2>Resolve low-confidence tracks before Navidrome export</h2>
+        <p>
+          Anything listed here scored below your Deezer match threshold, so the app paused the Navidrome playlist export.
+          Pick the right Deezer match, search again to also see SoundCloud options, or keep the track marked missing for now.
+        </p>
+
+        {% if low_confidence_items %}
+          <div class="review-grid">
+            {% for item in low_confidence_items %}
+              {% set candidates = item.candidates or ([item.match] if item.match else []) %}
+              <article class="card muted review-card">
+                <h3>{{ item.track.artist or 'Unknown artist' }} — {{ item.track.title or 'Unknown title' }}</h3>
+                <p class="help-text">{{ item.message or 'Manual review required for this track.' }}</p>
+                {% if item.match %}
+                  <p class="help-text">
+                    Best automatic match: <strong>{{ item.match.artist or '—' }} — {{ item.match.title or '—' }}</strong>
+                    {% if item.match.album %}from <code>{{ item.match.album }}</code>{% endif %}
+                    {% if item.match.score is defined %}(score {{ item.match.score }}){% endif %}
+                  </p>
+                {% endif %}
+
+                <form action="{{ url_for('web.sync_review_action', job_id=job.job_id) }}" method="post" class="stack">
+                  <input type="hidden" name="item_index" value="{{ item.index }}">
+
+                  <div class="review-fields">
+                    <label>
+                      <span>Artist</span>
+                      <input type="text" name="artist" value="{{ item.track.artist or '' }}">
+                    </label>
+                    <label>
+                      <span>Title</span>
+                      <input type="text" name="title" value="{{ item.track.title or '' }}">
+                    </label>
+                    <label>
+                      <span>Album</span>
+                      <input type="text" name="album" value="{{ item.track.album or '' }}">
+                    </label>
+                  </div>
+
+                  <div class="action-row">
+                    <button type="submit" name="action" value="search">Search again</button>
+                    <button type="submit" name="action" value="skip">Keep missing for now</button>
+                  </div>
+
+                  {% if candidates %}
+                    <div class="candidate-list">
+                      {% for candidate in candidates %}
+                        <label class="candidate-option">
+                          <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first %}checked{% endif %}>
+                          <span>
+                            <strong>[{{ candidate.provider_label or candidate.provider or 'Match' }}]</strong>
+                            <strong>{{ candidate.artist or '—' }} — {{ candidate.title or '—' }}</strong>
+                            {% if candidate.album %}<span> · {{ candidate.album }}</span>{% endif %}
+                            {% if candidate.score is defined %}<span> · score {{ candidate.score }}</span>{% endif %}
+                          </span>
+                        </label>
+                      {% endfor %}
+                    </div>
+
+                    <button type="submit" name="action" value="download">Download selected match</button>
+                  {% endif %}
+                </form>
+              </article>
+            {% endfor %}
+          </div>
+        {% elif pending_export and pending_export.ready and not pending_export.written %}
+          <p class="help-text">Manual review is complete. Commit the playlist to Navidrome when you're ready.</p>
+          <form action="{{ url_for('web.sync_export_playlist', job_id=job.job_id) }}" method="post" class="stack">
+            <button type="submit">Commit playlist to Navidrome now</button>
+          </form>
+        {% elif pending_export and pending_export.written %}
+          <p class="help-text">The playlist has already been written to Navidrome.</p>
+        {% endif %}
+      </section>
+    {% endif %}
 
     <section class="card tab-panel" data-tab-panel="results" hidden>
       <div class="table-wrap">
@@ -84,6 +169,7 @@
 
   <script>
     const statusUrl = {{ url_for('web.sync_status', job_id=job.job_id) | tojson }};
+    let reviewReloaded = false;
 
     function escapeHtml(value) {
       return String(value ?? '—')
@@ -172,6 +258,17 @@
       }
 
       renderResults(results);
+
+      const reviewPanel = document.querySelector('[data-tab-panel="review"]');
+      if (
+        !reviewPanel &&
+        !reviewReloaded &&
+        job.status === 'completed' &&
+        (Number(summary.low_confidence || 0) > 0 || (playlistExport && !playlistExport.written))
+      ) {
+        reviewReloaded = true;
+        window.location.reload();
+      }
     }
 
     async function pollStatus() {
