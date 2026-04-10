@@ -24,7 +24,7 @@ def parse_uploaded_playlist(filename: str, payload: bytes) -> list[PlaylistTrack
     if suffix not in SUPPORTED_EXTENSIONS:
         raise ValueError(f"Unsupported playlist type: {suffix or 'unknown'}")
 
-    text = payload.decode("utf-8-sig", errors="ignore")
+    text = _decode_playlist_text(payload)
     if suffix in {".m3u", ".m3u8"}:
         return parse_m3u(text)
     if suffix == ".csv":
@@ -191,6 +191,17 @@ def find_imported_listenbrainz_playlist_ids(
     return imported_ids
 
 
+def _decode_playlist_text(payload: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "utf-16-be"):
+        try:
+            decoded = payload.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if decoded.strip("\x00\ufeff\r\n\t "):
+            return decoded
+    return payload.decode("utf-8", errors="ignore")
+
+
 def _build_stored_filename(filename: str) -> str:
     path = Path(filename)
     stem = secure_filename(path.stem) or "playlist"
@@ -202,7 +213,7 @@ def _detect_playlist_name(filename: str, payload: bytes | str | dict) -> str:
     fallback = Path(filename).stem.strip() or "playlist"
 
     if isinstance(payload, bytes):
-        text = payload.decode("utf-8", errors="ignore")
+        text = _decode_playlist_text(payload)
     elif isinstance(payload, str):
         text = payload
     else:

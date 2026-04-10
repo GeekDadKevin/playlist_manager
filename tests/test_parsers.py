@@ -139,6 +139,42 @@ def test_parse_jspf_accepts_top_level_playlist_object_without_wrapper() -> None:
     assert tracks[0].duration_seconds == 109
 
 
+def test_parse_jspf_accepts_tracks_key_and_root_list() -> None:
+    payload = {
+        "title": "Alt playlist",
+        "tracks": [
+            {
+                "name": "Generator",
+                "artist": "Bad Religion",
+                "album": "Generator",
+                "identifier": "https://musicbrainz.org/recording/generator",
+            }
+        ],
+    }
+
+    tracks = parse_jspf(payload)
+
+    assert len(tracks) == 1
+    assert tracks[0].title == "Generator"
+    assert tracks[0].artist == "Bad Religion"
+    assert tracks[0].album == "Generator"
+
+    list_payload = [
+        {
+            "title": "Hybrid Moments",
+            "creator": "Misfits",
+            "album": "Static Age",
+            "identifier": "https://musicbrainz.org/recording/hybrid-moments",
+        }
+    ]
+
+    list_tracks = parse_jspf(list_payload)
+
+    assert len(list_tracks) == 1
+    assert list_tracks[0].title == "Hybrid Moments"
+    assert list_tracks[0].artist == "Misfits"
+
+
 def test_parse_navidrome_missing_csv_extracts_metadata() -> None:
     csv_content = (
         "Theory of a Deadman/Scars & Souvenirs (Special Edition)/"
