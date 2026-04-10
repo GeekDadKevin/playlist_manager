@@ -300,23 +300,40 @@
       }
     }
 
+    function showDownloadProgressDialog(title, message) {
+      pendingDownloadRedirectUrl = '';
+      if (downloadProgressClose) {
+        downloadProgressClose.hidden = true;
+      }
+      downloadProgressTitle.textContent = title;
+      downloadProgressText.textContent = message;
+      if (downloadProgressDialog && typeof downloadProgressDialog.showModal === 'function' && !downloadProgressDialog.open) {
+        downloadProgressDialog.showModal();
+      }
+    }
+
+    function finishDownloadProgressDialog(title, message, options = {}) {
+      const { redirectUrl = '', closeLabel = 'Continue' } = options;
+      pendingDownloadRedirectUrl = redirectUrl;
+      downloadProgressTitle.textContent = title;
+      downloadProgressText.textContent = message;
+      if (downloadProgressClose) {
+        downloadProgressClose.hidden = false;
+        downloadProgressClose.textContent = closeLabel;
+      }
+    }
+
     async function submitReviewDownload(form) {
       const formData = new FormData(form);
       const selectedOption = form.querySelector('input[name="candidate_id"]:checked');
       const optionLabel = selectedOption?.closest('.candidate-option')?.innerText?.replace(/\s+/g, ' ').trim();
       const trackLabel = form.dataset.trackLabel || 'selected track';
-      pendingDownloadRedirectUrl = '';
-      if (downloadProgressClose) {
-        downloadProgressClose.hidden = true;
-      }
-      downloadProgressTitle.textContent = 'Downloading selected match';
-      downloadProgressText.textContent = optionLabel
-        ? `${optionLabel} is downloading now. The review page will stay here when it finishes.`
-        : `${trackLabel} is downloading now. The review page will stay here when it finishes.`;
-
-      if (downloadProgressDialog && typeof downloadProgressDialog.showModal === 'function' && !downloadProgressDialog.open) {
-        downloadProgressDialog.showModal();
-      }
+      showDownloadProgressDialog(
+        'Downloading selected match',
+        optionLabel
+          ? `${optionLabel} is downloading now. The review page will stay here when it finishes.`
+          : `${trackLabel} is downloading now. The review page will stay here when it finishes.`
+      );
       sessionStorage.setItem(syncTabPreferenceKey, 'review');
 
       const response = await fetch(form.action, {
@@ -336,18 +353,57 @@
         updatePage(payload.job);
       }
       activateSyncTab('review');
-      pendingDownloadRedirectUrl = payload.redirect_url || '';
-      downloadProgressTitle.textContent = 'Selected match finished';
-      downloadProgressText.textContent = payload.review_complete
-        ? `${payload.message} Low-confidence review is complete.`
-        : `${payload.message} Click Continue to refresh the review list.`;
+      finishDownloadProgressDialog(
+        'Selected match finished',
+        payload.review_complete
+          ? `${payload.message} Low-confidence review is complete.`
+          : `${payload.message} Click Continue to refresh the review list.`,
+        { redirectUrl: payload.redirect_url || '' }
+      );
 
       if (payload.review_complete) {
         sessionStorage.removeItem(syncTabPreferenceKey);
       }
-      if (downloadProgressClose) {
-        downloadProgressClose.hidden = false;
-        downloadProgressClose.textContent = 'Continue';
+    }
+
+    async function submitBulkReviewDownload(form) {
+      const formData = new FormData(form);
+      const selectedCount = formData.getAll('selected_candidate_id').length;
+      showDownloadProgressDialog(
+        'Downloading selected matches',
+        selectedCount
+          ? `Processing ${selectedCount} selected match(es) now. This page will stay on the review tab while the downloads finish.`
+          : 'Processing the selected matches now. This page will stay on the review tab while the downloads finish.'
+      );
+      sessionStorage.setItem(syncTabPreferenceKey, 'review');
+
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not download the selected matches.');
+      }
+
+      if (payload.job) {
+        updatePage(payload.job);
+      }
+      activateSyncTab('review');
+      finishDownloadProgressDialog(
+        'Selected downloads finished',
+        payload.review_complete
+          ? `${payload.message} Low-confidence review is complete.`
+          : `${payload.message} Click Continue to refresh the review list.`,
+        { redirectUrl: payload.redirect_url || '' }
+      );
+
+      if (payload.review_complete) {
+        sessionStorage.removeItem(syncTabPreferenceKey);
       }
     }
 
@@ -496,7 +552,7 @@
 
     const bulkReviewForm = document.getElementById('bulk-review-form');
     if (bulkReviewForm) {
-      bulkReviewForm.addEventListener('submit', (event) => {
+      bulkReviewForm.addEventListener('submit', async (event) => {
         const submitter = event.submitter;
         if (!submitter) {
           return;
@@ -539,6 +595,24 @@
           if (errorBox) {
             errorBox.hidden = false;
             errorBox.textContent = 'Choose at least one candidate before using Download all selected.';
+          }
+          return;
+        }
+
+        event.preventDefault();
+        try {
+          await submitBulkReviewDownload(bulkReviewForm);
+        } catch (error) {
+          pendingDownloadRedirectUrl = '';
+          finishDownloadProgressDialog(
+            'Selected downloads could not finish',
+            error.message,
+            { closeLabel: 'Close' }
+          );
+          const errorBox = document.getElementById('job-error');
+          if (errorBox) {
+            errorBox.hidden = false;
+            errorBox.textContent = error.message;
           }
         }
       });

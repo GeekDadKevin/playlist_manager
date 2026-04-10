@@ -290,6 +290,93 @@ def test_sync_review_bulk_download_selected_action_redirects_back_to_status(
     assert response.headers["Location"].endswith("/sync/job-low")
 
 
+def test_sync_status_page_mentions_bulk_download_feedback(monkeypatch) -> None:
+    app = create_app()
+    app.config.update(TESTING=True)
+    client = app.test_client()
+
+    job = {
+        "job_id": "job-low",
+        "status": "completed",
+        "created_at": "",
+        "started_at": "",
+        "completed_at": "",
+        "progress_percent": 100,
+        "error": "",
+        "upload": {
+            "saved_path": "memory://demo",
+            "original_name": "demo.m3u",
+            "playlist_name": "Demo playlist",
+        },
+        "sync": {
+            "mode": "download",
+            "provider": "deezer",
+            "threshold": 72,
+            "processing_mode": "sequential",
+            "started_at": "",
+            "completed_at": "",
+            "summary": {
+                "requested": 1,
+                "processed": 1,
+                "preview": 0,
+                "downloaded": 0,
+                "already_available": 0,
+                "low_confidence": 1,
+                "not_found": 0,
+                "failed": 0,
+            },
+            "results": [
+                {
+                    "index": 1,
+                    "status": "low_confidence",
+                    "message": "Best match was below the configured confidence threshold.",
+                    "track": {
+                        "artist": "Massive Attack",
+                        "title": "Teardrop",
+                        "album": "Mezzanine",
+                    },
+                    "match": {
+                        "artist": "Massive Attack",
+                        "title": "Teardrop",
+                        "album": "Teardrop",
+                        "score": 68.5,
+                        "deezer_id": 12345,
+                        "provider": "deezer",
+                        "provider_label": "Deezer",
+                    },
+                    "candidates": [
+                        {
+                            "artist": "Massive Attack",
+                            "title": "Teardrop",
+                            "album": "Teardrop",
+                            "score": 68.5,
+                            "deezer_id": 12345,
+                            "provider": "deezer",
+                            "provider_label": "Deezer",
+                        },
+                        {
+                            "artist": "Massive Attack",
+                            "title": "Teardrop",
+                            "album": "SoundCloud",
+                            "score": 91.0,
+                            "id": "soundcloud:123",
+                            "provider": "soundcloud",
+                            "provider_label": "SoundCloud",
+                        },
+                    ],
+                }
+            ],
+        },
+    }
+
+    monkeypatch.setattr("app.routes.web.get_sync_job", lambda job_id: job)
+
+    response = client.get("/sync/job-low")
+
+    assert response.status_code == 200
+    assert b'This page will stay on the review tab while the downloads finish.' in response.data
+
+
 def test_sync_review_download_action_returns_json_for_async_progress(monkeypatch) -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test-secret")
