@@ -11,11 +11,15 @@ def parse_jspf(content: str | dict) -> list[PlaylistTrack]:
     if not isinstance(payload, dict):
         raise ValueError("JSPF content must be a JSON object.")
 
-    playlist = payload.get("playlist", {})
-    if not isinstance(playlist, dict):
-        raise ValueError("JSPF playlist payload is missing the `playlist` object.")
+    playlist = payload.get("playlist")
+    if isinstance(playlist, dict):
+        playlist_data = playlist
+    elif any(key in payload for key in ("track", "title", "creator", "annotation")):
+        playlist_data = payload
+    else:
+        raise ValueError("JSPF playlist payload is missing track data.")
 
-    items = playlist.get("track", [])
+    items = playlist_data.get("track", [])
     if isinstance(items, dict):
         items = [items]
     elif not isinstance(items, list):

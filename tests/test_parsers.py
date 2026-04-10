@@ -113,6 +113,32 @@ def test_parse_jspf_accepts_single_track_dict_payload() -> None:
     assert tracks[0].album == "Loveless"
 
 
+def test_parse_jspf_accepts_top_level_playlist_object_without_wrapper() -> None:
+    payload = {
+        "title": "LB Radio for tag punk on easy mode",
+        "creator": "ListenBrainz Troi",
+        "track": [
+            {
+                "title": "Dayo",
+                "creator": "The Business",
+                "album": "Suburban Rebels",
+                "duration": 109000,
+                "identifier": [
+                    "https://musicbrainz.org/recording/5c3e2b29-7aec-48fe-92a7-fa76a2903273"
+                ],
+            }
+        ],
+    }
+
+    tracks = parse_jspf(payload)
+
+    assert len(tracks) == 1
+    assert tracks[0].title == "Dayo"
+    assert tracks[0].artist == "The Business"
+    assert tracks[0].album == "Suburban Rebels"
+    assert tracks[0].duration_seconds == 109
+
+
 def test_parse_navidrome_missing_csv_extracts_metadata() -> None:
     csv_content = (
         "Theory of a Deadman/Scars & Souvenirs (Special Edition)/"

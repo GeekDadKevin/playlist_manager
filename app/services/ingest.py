@@ -37,6 +37,8 @@ def save_uploaded_playlist(
 ) -> PlaylistUpload:
     _ = upload_folder
     tracks = parse_uploaded_playlist(filename, payload)
+    if not tracks:
+        raise ValueError("The uploaded playlist did not contain any readable tracks.")
     playlist_name = _detect_playlist_name(filename, payload)
 
     stored_name = _build_stored_filename(filename)
@@ -68,7 +70,8 @@ def load_saved_playlist(upload_folder: str | Path, saved_path: str | Path) -> Pl
     target_path.relative_to(base_folder)
     payload = target_path.read_bytes()
     tracks = parse_uploaded_playlist(target_path.name, payload)
-
+    if not tracks:
+        raise ValueError("The saved playlist did not contain any readable tracks.")
     return PlaylistUpload(
         source_kind="saved-upload",
         original_name=target_path.name,
@@ -134,6 +137,9 @@ def fetch_remote_jspf(
             payload = text
             tracks = parse_jspf(text)
         remote_url = normalized_url
+
+    if not tracks:
+        raise ValueError("The ListenBrainz playlist did not contain any readable tracks.")
 
     _ = upload_folder
     stored_name = _build_stored_filename("listenbrainz.jspf")
@@ -207,6 +213,10 @@ def _detect_playlist_name(filename: str, payload: bytes | str | dict) -> str:
     except (TypeError, json.JSONDecodeError):
         return fallback
 
-    playlist = parsed.get("playlist", {}) if isinstance(parsed, dict) else {}
+    if isinstance(parsed, dict):
+        playlist = parsed.get("playlist") if isinstance(parsed.get("playlist"), dict) else parsed
+    else:
+        playlist = {}
+
     title = str(playlist.get("title", "")).strip() if isinstance(playlist, dict) else ""
     return title or fallback
