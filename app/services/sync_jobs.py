@@ -256,16 +256,11 @@ def _should_prepare_review_candidates(service: SyncService, sync_result: dict[st
     )
 
 
-def _merge_review_candidates(
-    existing_candidates: list[dict[str, Any]],
-    additional_candidates: list[dict[str, Any]],
-    *,
-    limit: int = 8,
-) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
+def _dedupe_review_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for candidate in [*existing_candidates, *additional_candidates]:
+    for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
 
@@ -288,11 +283,36 @@ def _merge_review_candidates(
             continue
 
         seen.add(normalized_key)
-        merged.append(candidate)
+        deduped.append(candidate)
+
+    return deduped
+
+
+def _merge_review_candidates(
+    existing_candidates: list[dict[str, Any]],
+    additional_candidates: list[dict[str, Any]],
+    *,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    primary = _dedupe_review_candidates(existing_candidates)
+    secondary = _dedupe_review_candidates(additional_candidates)
+
+    if not secondary:
+        return primary[:limit]
+    if not primary:
+        return secondary[:limit]
+
+    secondary_quota = min(len(secondary), max(1, limit // 2))
+    primary_quota = min(len(primary), max(1, limit - secondary_quota))
+
+    merged = [*primary[:primary_quota], *secondary[:secondary_quota]]
+    leftovers = [*primary[primary_quota:], *secondary[secondary_quota:]]
+    for candidate in leftovers:
         if len(merged) >= limit:
             break
+        merged.append(candidate)
 
-    return merged
+    return merged[:limit]
 
 
 def _prepare_review_candidates_for_item(
@@ -319,6 +339,8 @@ def _prepare_review_candidates_for_item(
         soundcloud_candidates: list[dict[str, Any]] = []
     else:
         soundcloud_candidates = soundcloud_service.search_track(track, limit=4, max_queries=1)
+        if not soundcloud_candidates:
+            soundcloud_candidates = soundcloud_service.search_track(track, limit=4, max_queries=3)
 
     candidates = _merge_review_candidates(existing_candidates, soundcloud_candidates)
     return {

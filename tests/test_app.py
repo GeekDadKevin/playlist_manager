@@ -479,6 +479,213 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
     assert not (tmp_path / "navidrome_playlists" / "Weekly Jams.m3u").exists()
 
 
+def test_sync_job_keeps_soundcloud_candidates_visible_when_deezer_list_is_full(
+    tmp_path,
+) -> None:
+    class StubSoundCloudService:
+        def is_configured(self) -> bool:
+            return True
+
+        def search_track(self, track, limit=10, *, max_queries=None):
+            return [
+                {
+                    "title": track.title,
+                    "artist": track.artist,
+                    "album": "SoundCloud",
+                    "score": 91.0,
+                    "id": f"soundcloud:{track.title}",
+                    "provider": "soundcloud",
+                    "provider_label": "SoundCloud",
+                }
+            ]
+
+    class StubService:
+        def __init__(self) -> None:
+            self.soundcloud_service = StubSoundCloudService()
+
+        def sync_tracks(self, tracks, max_tracks=None, progress_callback=None):
+            deezer_candidates = [
+                {
+                    "title": f"Teardrop option {index}",
+                    "artist": "Massive Attack",
+                    "score": 68.0 - index,
+                    "deezer_id": 12000 + index,
+                    "provider": "deezer",
+                    "provider_label": "Deezer",
+                }
+                for index in range(8)
+            ]
+            result = {
+                "mode": "download",
+                "provider": "deezer",
+                "threshold": 72,
+                "processing_mode": "sequential",
+                "started_at": "2026-04-09T00:00:00+00:00",
+                "completed_at": "2026-04-09T00:00:01+00:00",
+                "summary": {
+                    "requested": 1,
+                    "processed": 1,
+                    "preview": 0,
+                    "downloaded": 0,
+                    "already_available": 0,
+                    "low_confidence": 1,
+                    "not_found": 0,
+                    "failed": 0,
+                },
+                "results": [
+                    {
+                        "index": 1,
+                        "track": {"title": "Teardrop", "artist": "Massive Attack"},
+                        "status": "low_confidence",
+                        "match": deezer_candidates[0],
+                        "candidates": deezer_candidates,
+                    }
+                ],
+            }
+            if progress_callback is not None:
+                progress_callback(result)
+            return result
+
+        def search_track(self, track, limit=8, include_soundcloud=False):
+            raise AssertionError("The preload path should reuse the Deezer candidates.")
+
+    service = StubService()
+    upload = PlaylistUpload(
+        source_kind="upload",
+        original_name="demo.m3u",
+        playlist_name="Candidate Mix",
+        stored_name="demo-full.m3u",
+        saved_path="memory://demo-full",
+        tracks=[PlaylistTrack(title="Teardrop", artist="Massive Attack")],
+    )
+
+    job_id = create_sync_job(upload, max_tracks=1)
+    _run_sync_job(
+        job_id,
+        upload,
+        service,
+        1,
+        str(tmp_path / "navidrome_playlists"),
+        "",
+    )
+
+    job = get_sync_job(job_id)
+
+    assert job is not None
+    assert any(
+        candidate.get("provider") == "soundcloud"
+        for candidate in job["sync"]["results"][0]["candidates"]
+    )
+
+
+def test_sync_job_uses_broader_soundcloud_fallback_when_fast_preload_finds_nothing(
+    tmp_path,
+) -> None:
+    class StubSoundCloudService:
+        def __init__(self) -> None:
+            self.search_requests: list[int | None] = []
+
+        def is_configured(self) -> bool:
+            return True
+
+        def search_track(self, track, limit=10, *, max_queries=None):
+            self.search_requests.append(max_queries)
+            if max_queries == 1:
+                return []
+            return [
+                {
+                    "title": track.title,
+                    "artist": track.artist,
+                    "album": "SoundCloud",
+                    "score": 90.0,
+                    "id": f"soundcloud:{track.title}",
+                    "provider": "soundcloud",
+                    "provider_label": "SoundCloud",
+                }
+            ]
+
+    class StubService:
+        def __init__(self) -> None:
+            self.soundcloud_service = StubSoundCloudService()
+
+        def sync_tracks(self, tracks, max_tracks=None, progress_callback=None):
+            result = {
+                "mode": "download",
+                "provider": "deezer",
+                "threshold": 72,
+                "processing_mode": "sequential",
+                "started_at": "2026-04-09T00:00:00+00:00",
+                "completed_at": "2026-04-09T00:00:01+00:00",
+                "summary": {
+                    "requested": 1,
+                    "processed": 1,
+                    "preview": 0,
+                    "downloaded": 0,
+                    "already_available": 0,
+                    "low_confidence": 1,
+                    "not_found": 0,
+                    "failed": 0,
+                },
+                "results": [
+                    {
+                        "index": 1,
+                        "track": {"title": "Teardrop", "artist": "Massive Attack"},
+                        "status": "low_confidence",
+                        "match": {
+                            "title": "Teardrop",
+                            "artist": "Massive Attack",
+                            "score": 68.5,
+                        },
+                        "candidates": [
+                            {
+                                "title": "Teardrop",
+                                "artist": "Massive Attack",
+                                "score": 68.5,
+                                "deezer_id": 12345,
+                                "provider": "deezer",
+                                "provider_label": "Deezer",
+                            }
+                        ],
+                    }
+                ],
+            }
+            if progress_callback is not None:
+                progress_callback(result)
+            return result
+
+        def search_track(self, track, limit=8, include_soundcloud=False):
+            raise AssertionError("The preload path should not rerun the full Deezer search.")
+
+    service = StubService()
+    upload = PlaylistUpload(
+        source_kind="upload",
+        original_name="demo.m3u",
+        playlist_name="Fallback Demo",
+        stored_name="demo-fallback.m3u",
+        saved_path="memory://demo-fallback",
+        tracks=[PlaylistTrack(title="Teardrop", artist="Massive Attack")],
+    )
+
+    job_id = create_sync_job(upload, max_tracks=1)
+    _run_sync_job(
+        job_id,
+        upload,
+        service,
+        1,
+        str(tmp_path / "navidrome_playlists"),
+        "",
+    )
+
+    job = get_sync_job(job_id)
+
+    assert job is not None
+    assert any(
+        candidate.get("provider") == "soundcloud"
+        for candidate in job["sync"]["results"][0]["candidates"]
+    )
+    assert service.soundcloud_service.search_requests == [1, 3]
+
+
 def test_sync_job_preloads_low_confidence_tracks_in_parallel(tmp_path) -> None:
     class ParallelSoundCloudService:
         def __init__(self) -> None:
