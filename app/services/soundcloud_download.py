@@ -274,7 +274,7 @@ class SoundCloudDownloadService:
             title=resolved_title,
             artist=resolved_artist,
             album=resolved_album,
-            track_number=int(match.get("track_number") or 0),
+            track_number=_coerce_track_number(match.get("track_number") or track.track_number),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="soundcloud",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
@@ -316,7 +316,7 @@ class SoundCloudDownloadService:
         artist = _safe_name(self._preferred_artist_name(track, match))
         album = _safe_name(self._preferred_album_name(match))
         title = _safe_name(str(match.get("title") or track.title or "Unknown Track"))
-        track_number = int(match.get("track_number") or 0)
+        track_number = _coerce_track_number(match.get("track_number") or track.track_number)
         return build_download_path(
             self.download_dir,
             self.download_path_template,
@@ -461,6 +461,14 @@ def _friendly_soundcloud_error(exc: Exception) -> str:
 def _safe_name(value: str) -> str:
     cleaned = _SAFE_NAME_RE.sub("_", value).strip(". ")
     return cleaned[:100] or "Unknown"
+
+
+def _coerce_track_number(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
 
 
 def _utc_timestamp() -> str:

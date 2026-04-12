@@ -558,7 +558,7 @@ class DeezerDownloadService:
         artist = _safe_name(match.get("artist", "") or track.artist or "Unknown Artist")
         album = _safe_name(match.get("album", "") or track.album or "Unknown Album")
         title = _safe_name(match.get("title", "") or track.title or "Unknown Track")
-        track_number = _coerce_track_number(match.get("track_number"))
+        track_number = _coerce_track_number(match.get("track_number") or track.track_number)
         return build_download_path(
             self.download_dir,
             self.download_path_template,
@@ -584,7 +584,7 @@ class DeezerDownloadService:
             title=str(match.get("title", "") or track.title or audio_path.stem),
             artist=str(match.get("artist", "") or track.artist or ""),
             album=str(match.get("album", "") or track.album or ""),
-            track_number=_coerce_track_number(match.get("track_number")),
+            track_number=_coerce_track_number(match.get("track_number") or track.track_number),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="deezer",
             deezer_id=deezer_id,
@@ -612,7 +612,7 @@ class DeezerDownloadService:
             title=str(match.get("title", "") or track.title or audio_path.stem),
             artist=str(match.get("artist", "") or track.artist or ""),
             album=str(match.get("album", "") or track.album or ""),
-            track_number=_coerce_track_number(match.get("track_number")),
+            track_number=_coerce_track_number(match.get("track_number") or track.track_number),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="deezer",
             deezer_id=deezer_id,

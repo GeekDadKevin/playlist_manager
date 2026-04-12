@@ -598,6 +598,7 @@ def _track_from_item(
         title=title.strip() or str(track.get("title", "")).strip(),
         artist=artist.strip() or str(track.get("artist", "")).strip(),
         album=album.strip() or str(track.get("album", "")).strip(),
+        track_number=track.get("track_number"),
         duration_seconds=track.get("duration_seconds"),
         source=str(track.get("source", "")).strip(),
         extra=dict(track.get("extra", {})) if isinstance(track.get("extra"), dict) else {},

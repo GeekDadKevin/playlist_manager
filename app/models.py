@@ -9,6 +9,7 @@ class PlaylistTrack:
     title: str
     artist: str = ""
     album: str = ""
+    track_number: int | None = None
     duration_seconds: int | None = None
     source: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

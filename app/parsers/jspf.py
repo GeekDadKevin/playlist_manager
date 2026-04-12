@@ -50,6 +50,15 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
         duration_seconds = _ms_to_seconds(
             item.get("duration") or extension_metadata.get("duration")
         )
+        track_number = _coerce_track_number(
+            item.get("track")
+            or item.get("tracknum")
+            or item.get("trackNum")
+            or item.get("track_number")
+            or extension_metadata.get("track")
+            or extension_metadata.get("tracknum")
+            or extension_metadata.get("track_number")
+        )
         annotation = (
             _text_value(item.get("annotation"))
             or _text_value(item.get("description"))
@@ -61,6 +70,7 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
                 title=title,
                 artist=artist,
                 album=album,
+                track_number=track_number,
                 duration_seconds=duration_seconds,
                 source=identifier.strip(),
                 extra={"annotation": annotation},
@@ -160,6 +170,17 @@ def _text_value(value: object) -> str:
                 return text
 
     return ""
+
+
+def _coerce_track_number(value: object) -> int | None:
+    text = _text_value(value).strip()
+    if not text:
+        return None
+    try:
+        number = int(text)
+    except ValueError:
+        return None
+    return number if number > 0 else None
 
 
 def _title_from_identifier(identifier: str) -> str:
