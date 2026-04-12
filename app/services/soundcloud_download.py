@@ -10,6 +10,7 @@ from app.matching import rank_candidates
 from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
 from app.services.cover_art import ensure_cover_art, pick_thumbnail_url
+from app.services.path_template import build_download_path
 from app.services.song_metadata import write_song_metadata_xml
 
 try:  # pragma: no cover - exercised indirectly in runtime environments
@@ -29,6 +30,7 @@ class SoundCloudDownloadService:
         self,
         download_dir: str = "/navidrome/root",
         navidrome_music_root: str = "",
+        download_path_template: str = "{artist}/{album}/{artist} - {track} - {title}",
         match_threshold: float = 72.0,
         enabled: bool = True,
         extractor_factory: Any | None = None,
@@ -38,6 +40,7 @@ class SoundCloudDownloadService:
     ) -> None:
         self.download_dir = download_dir
         self.navidrome_music_root = navidrome_music_root or download_dir
+        self.download_path_template = download_path_template
         self.match_threshold = match_threshold
         self.enabled = enabled
         self.request_timeout = max(float(request_timeout), 1.0)
@@ -63,6 +66,9 @@ class SoundCloudDownloadService:
         return cls(
             download_dir=music_root,
             navidrome_music_root=music_root,
+            download_path_template=str(
+                config.get("DOWNLOAD_PATH_TEMPLATE", "{artist}/{album}/{artist} - {track} - {title}")
+            ),
             match_threshold=threshold,
             enabled=enabled,
             request_timeout=timeout,
@@ -136,6 +142,7 @@ class SoundCloudDownloadService:
             "album": self._preferred_album_name(match),
             "provider": "soundcloud",
             "provider_label": "SoundCloud",
+            "track_number": 0,
         }
         result: dict[str, Any] = {
             "track": track.to_dict(),
@@ -267,6 +274,7 @@ class SoundCloudDownloadService:
             title=resolved_title,
             artist=resolved_artist,
             album=resolved_album,
+            track_number=int(match.get("track_number") or 0),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="soundcloud",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
@@ -308,7 +316,15 @@ class SoundCloudDownloadService:
         artist = _safe_name(self._preferred_artist_name(track, match))
         album = _safe_name(self._preferred_album_name(match))
         title = _safe_name(str(match.get("title") or track.title or "Unknown Track"))
-        return Path(self.download_dir) / artist / album / title
+        track_number = int(match.get("track_number") or 0)
+        return build_download_path(
+            self.download_dir,
+            self.download_path_template,
+            artist=artist,
+            album=album,
+            title=title,
+            track_number=track_number,
+        )
 
     def _preferred_title(
         self,

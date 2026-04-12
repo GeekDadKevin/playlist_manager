@@ -29,6 +29,10 @@ class Config:
     NAVIDROME_PLAYLISTS_DIR = NAVIDROME_PLAYLIST_DIR
     NAVIDROME_MUSIC_ROOT = os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root")
     NAVIDROME_M3U_PATH_PREFIX = os.getenv("NAVIDROME_M3U_PATH_PREFIX", "..")
+    DOWNLOAD_PATH_TEMPLATE = os.getenv(
+        "DOWNLOAD_PATH_TEMPLATE",
+        "{artist}/{album}/{artist} - {track} - {title}",
+    )
     DEEZER_ARL = os.getenv("DEEZER_ARL", "")
     DEEZER_QUALITY = os.getenv("DEEZER_QUALITY", "FLAC").upper()
     DEEZER_MATCH_THRESHOLD = float(os.getenv("DEEZER_MATCH_THRESHOLD", "72"))

@@ -15,6 +15,7 @@ from app.matching import rank_candidates
 from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
 from app.services.cover_art import ensure_cover_art
+from app.services.path_template import build_download_path
 from app.services.song_metadata import write_flac_tags, write_song_metadata_xml
 from app.services.soundcloud_download import SoundCloudDownloadService
 
@@ -36,6 +37,7 @@ class DeezerDownloadService:
         arl: str = "",
         download_dir: str = "/navidrome/root",
         navidrome_music_root: str = "",
+        download_path_template: str = "{artist}/{album}/{artist} - {track} - {title}",
         quality: str = "FLAC",
         match_threshold: float = 72.0,
         transport: httpx.BaseTransport | None = None,
@@ -44,6 +46,7 @@ class DeezerDownloadService:
         self.arl = arl.strip()
         self.download_dir = download_dir
         self.navidrome_music_root = navidrome_music_root
+        self.download_path_template = download_path_template
         self.quality = quality.upper()
         self.match_threshold = match_threshold
         self.transport = transport
@@ -60,6 +63,9 @@ class DeezerDownloadService:
             arl=str(config.get("DEEZER_ARL", "")),
             download_dir=music_root,
             navidrome_music_root=music_root,
+            download_path_template=str(
+                config.get("DOWNLOAD_PATH_TEMPLATE", "{artist}/{album}/{artist} - {track} - {title}")
+            ),
             quality=str(config.get("DEEZER_QUALITY", "FLAC")),
             match_threshold=float(config.get("DEEZER_MATCH_THRESHOLD", 72.0)),
             soundcloud_service=soundcloud_service,
@@ -371,6 +377,7 @@ class DeezerDownloadService:
                     or item.get("album", {}).get("cover")
                     or ""
                 ),
+                "track_number": item.get("track_position") or item.get("track_number") or 0,
                 "duration_seconds": item.get("duration"),
                 "source_kind": "external",
             }
@@ -551,7 +558,16 @@ class DeezerDownloadService:
         artist = _safe_name(match.get("artist", "") or track.artist or "Unknown Artist")
         album = _safe_name(match.get("album", "") or track.album or "Unknown Album")
         title = _safe_name(match.get("title", "") or track.title or "Unknown Track")
-        return Path(self.download_dir) / artist / album / f"{title}{ext}"
+        track_number = _coerce_track_number(match.get("track_number"))
+        return build_download_path(
+            self.download_dir,
+            self.download_path_template,
+            artist=artist,
+            album=album,
+            title=title,
+            track_number=track_number,
+            ext=ext,
+        )
 
     def _write_metadata_xml(
         self,
@@ -568,6 +584,7 @@ class DeezerDownloadService:
             title=str(match.get("title", "") or track.title or audio_path.stem),
             artist=str(match.get("artist", "") or track.artist or ""),
             album=str(match.get("album", "") or track.album or ""),
+            track_number=_coerce_track_number(match.get("track_number")),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="deezer",
             deezer_id=deezer_id,
@@ -595,6 +612,7 @@ class DeezerDownloadService:
             title=str(match.get("title", "") or track.title or audio_path.stem),
             artist=str(match.get("artist", "") or track.artist or ""),
             album=str(match.get("album", "") or track.album or ""),
+            track_number=_coerce_track_number(match.get("track_number")),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="deezer",
             deezer_id=deezer_id,
@@ -765,6 +783,14 @@ def _safe_name(value: str) -> str:
     """Strip characters that are invalid in directory/file names."""
     cleaned = _SAFE_NAME_RE.sub("_", value).strip(". ")
     return cleaned[:100] or "Unknown"
+
+
+def _coerce_track_number(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
 
 
 def _utc_timestamp() -> str:
