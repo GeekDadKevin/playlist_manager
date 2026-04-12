@@ -14,6 +14,7 @@ from Crypto.Cipher import Blowfish
 from app.matching import rank_candidates
 from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
+from app.services.cover_art import ensure_cover_art
 from app.services.song_metadata import write_flac_tags, write_song_metadata_xml
 from app.services.soundcloud_download import SoundCloudDownloadService
 
@@ -363,6 +364,13 @@ class DeezerDownloadService:
                 "artist_id": item.get("artist", {}).get("id"),
                 "album": item.get("album", {}).get("title", ""),
                 "album_id": item.get("album", {}).get("id"),
+                "album_cover": (
+                    item.get("album", {}).get("cover_xl")
+                    or item.get("album", {}).get("cover_big")
+                    or item.get("album", {}).get("cover_medium")
+                    or item.get("album", {}).get("cover")
+                    or ""
+                ),
                 "duration_seconds": item.get("duration"),
                 "source_kind": "external",
             }
@@ -513,6 +521,17 @@ class DeezerDownloadService:
                 )
             except Exception as exc:
                 log.warning("Could not write FLAC tags for %s: %s", output_path, exc)
+
+        try:
+            ensure_cover_art(
+                output_path.parent,
+                cover_url=str(match.get("album_cover") or ""),
+                fallback_title=str(match.get("title") or track.title or ""),
+                fallback_artist=str(match.get("artist") or track.artist or ""),
+                fallback_album=str(match.get("album") or track.album or ""),
+            )
+        except Exception as exc:
+            log.warning("Cover art update failed for %s: %s", output_path.parent, exc)
 
         size_kb = output_path.stat().st_size // 1024
         log.info("Download complete: %s (%d KB)", output_path.name, size_kb)

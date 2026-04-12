@@ -9,6 +9,7 @@ from typing import Any
 from app.matching import rank_candidates
 from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
+from app.services.cover_art import ensure_cover_art, pick_thumbnail_url
 from app.services.song_metadata import write_song_metadata_xml
 
 try:  # pragma: no cover - exercised indirectly in runtime environments
@@ -273,6 +274,16 @@ class SoundCloudDownloadService:
             annotation=str(info.get("description") or ""),
             timestamp=_utc_timestamp(),
         )
+        try:
+            ensure_cover_art(
+                output_path.parent,
+                cover_url=pick_thumbnail_url(info),
+                fallback_title=resolved_title,
+                fallback_artist=resolved_artist,
+                fallback_album=resolved_album,
+            )
+        except Exception as exc:
+            log.warning("Cover art update failed for %s: %s", output_path.parent, exc)
         return output_path, metadata_path
 
     def _resolve_downloaded_path(self, info: dict[str, Any], stem_path: Path) -> Path:
