@@ -86,7 +86,7 @@
         {% endif %}
 
         <button type="submit">Import playlist and start sync</button>
-        <p class="help-text">Importing jumps straight to the live sync page, shows downloads vs already-available tracks, and pauses for manual review if any Deezer match comes back low-confidence before the Navidrome playlist is written. That review step can also offer SoundCloud choices.</p>
+        <p class="help-text">Importing jumps straight to the live sync page, shows downloads vs already-available tracks, and pauses for manual review if any Deezer match comes back low-confidence before the Navidrome playlist is written. That review step can also offer SoundCloud or YouTube choices.</p>
       </form>
     </section>
 
@@ -100,8 +100,8 @@
       <ul>
         <li>Set <code>DEEZER_ARL</code> for the normal live download sync.</li>
         <li>Point <code>NAVIDROME_MUSIC_ROOT</code> at the shared folder where your library lives and new files should be saved.</li>
-        <li>Leave <code>SOUNDCLOUD_FALLBACK_ENABLED=1</code> if you want SoundCloud offered during low-confidence manual review.</li>
-        <li>Optionally tune <code>DEEZER_QUALITY</code>, <code>DEEZER_MATCH_THRESHOLD</code>, and <code>SOUNDCLOUD_MATCH_THRESHOLD</code>.</li>
+        <li>Set <code>SOUNDCLOUD_FALLBACK=1</code> and/or <code>YOUTUBE_FALLBACK=1</code> if you want fallback choices during low-confidence manual review.</li>
+        <li>Optionally tune <code>DEEZER_QUALITY</code>, <code>DEEZER_MATCH_THRESHOLD</code>, <code>SOUNDCLOUD_MATCH_THRESHOLD</code>, and <code>YOUTUBE_MATCH_THRESHOLD</code>.</li>
         <li>Once configured, importing a playlist jumps straight to Sync status, triggers Deezer downloads, and asks you to resolve any low-confidence tracks before the Navidrome playlist is committed.</li>
       </ul>
     </section>

@@ -61,14 +61,20 @@ DEEZER_ARL=your_deezer_session_cookie
 NAVIDROME_MUSIC_ROOT=/absolute/path/on/your/docker-host/music/root
 DEEZER_QUALITY=FLAC
 DEEZER_MATCH_THRESHOLD=72
-SOUNDCLOUD_FALLBACK_ENABLED=1
+SOUNDCLOUD_FALLBACK=1
+YOUTUBE_FALLBACK=0
 SOUNDCLOUD_MATCH_THRESHOLD=72
+YOUTUBE_MATCH_THRESHOLD=72
+DOWNLOAD_THREADS=1
 SOUNDCLOUD_REQUEST_TIMEOUT=25
 SOUNDCLOUD_REQUEST_RETRIES=3
 SOUNDCLOUD_FORCE_IPV4=1
 ```
 
-Sync is intentionally **sequential**: the app waits for each Deezer track to finish before moving to the next, then records per-track completion feedback. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud result through `yt-dlp` during manual review, or accept the remaining low-confidence items as missing in one step.
+Sync is **sequential by default** (set `DOWNLOAD_THREADS=1`), but you can raise `DOWNLOAD_THREADS` to allow parallel downloads. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud or YouTube result through `yt-dlp` during manual review, or accept the remaining low-confidence items as missing in one step.
+
+If `config.json` exists at the repo root (mounted to `/app/config.json` in Docker), its values override any matching keys in `.env`.
+Use [config.json.example](config.json.example) as a shareable template without secrets.
 
 If Docker logs show a SoundCloud message like `_ssl.c:993: The handshake operation timed out`, the app now retries those lookups and forces IPv4 by default. You can further raise `SOUNDCLOUD_REQUEST_TIMEOUT` in `.env` if your network is slow.
 
@@ -109,5 +115,5 @@ tests/           Parser, matching, and app smoke tests
 
 ## Notes
 
-- The real sync path now uses the built-in Deezer workflow, with optional SoundCloud choices only during low-confidence manual review.
+- The real sync path now uses the built-in Deezer workflow, with optional SoundCloud/YouTube choices only during low-confidence manual review.
 - Matching is structured for balanced fuzzy search, with low-confidence matches skipped instead of forced.

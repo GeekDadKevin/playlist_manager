@@ -1,0 +1,21 @@
+{
+  "FLASK_ENV": "development",
+  "SECRET_KEY": "change-me",
+  "APP_PORT": 3000,
+  "DATA_DIR": "/app/data",
+  "LISTENBRAINZ_API_BASE_URL": "https://api.listenbrainz.org",
+  "LISTENBRAINZ_USERNAME": "geekdadkevin",
+  "LISTENBRAINZ_AUTH_TOKEN": "a77d517d-1459-4953-8fb8-6d6dc0072945",
+  "DEEZER_MATCH_THRESHOLD": 72,
+  "SYNC_MAX_TRACKS": 100,
+  "DOWNLOAD_THREADS": 1,
+  "NAVIDROME_BASE_URL": "http://navidrome:4533",
+  "NAVIDROME_PLAYLIST_DIR": "/navidrome/playlist",
+  "NAVIDROME_M3U_PATH_PREFIX": "..",
+  "NAVIDROME_MUSIC_ROOT": "/navidrome/root",
+  "DEEZER_ARL": "f0c532e362748c22cd0c47b90a2669d9abacb1baa0d0f3e27e5b99e2f401131aee9e638a15b91e3ee9759225d7a6ba801b1ce36c8dc350ba2a3a33d16e67f733a94717726e0ca075668dfb4ac146440ee777ac51f3966e7f0ba453fb8254d693",
+  "DEEZER_QUALITY": "FLAC",
+  "SOUNDCLOUD_FALLBACK": false,
+  "YOUTUBE_FALLBACK": true,
+  "DOWNLOAD_PATH_TEMPLATE": "{artist}/{album}/{artist} - {track} - {title}"
+}

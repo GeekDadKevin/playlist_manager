@@ -86,6 +86,25 @@
         </ul>
         <p class="help-text">{{ settings.last_run_message }}</p>
       </section>
+
+      <section class="card">
+        <h3>Fallback providers</h3>
+        <label class="checkbox-row">
+          <input type="checkbox" name="soundcloud_fallback" {% if settings.soundcloud_fallback %}checked{% endif %}>
+          <span>Offer SoundCloud matches during low-confidence review</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="youtube_fallback" {% if settings.youtube_fallback %}checked{% endif %}>
+          <span>Offer YouTube matches during low-confidence review</span>
+        </label>
+        <p class="help-text">Fallback providers only appear when a Deezer match scores below your confidence threshold.</p>
+
+        <label>
+          <span>Download worker threads</span>
+          <input type="number" name="download_threads" min="1" max="8" value="{{ settings.download_threads }}">
+        </label>
+        <p class="help-text">Use 1 for sequential downloads; higher values can speed up large sync runs.</p>
+      </section>
     </div>
 
     <div class="action-row">

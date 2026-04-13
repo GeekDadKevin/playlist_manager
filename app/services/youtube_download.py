@@ -24,8 +24,8 @@ _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
 
 
-class SoundCloudDownloadService:
-    """Searches and downloads tracks from SoundCloud using yt-dlp."""
+class YouTubeDownloadService:
+    """Searches and downloads tracks from YouTube using yt-dlp."""
 
     def __init__(
         self,
@@ -52,19 +52,19 @@ class SoundCloudDownloadService:
         self.musicbrainz_service = musicbrainz_service
 
     @classmethod
-    def from_config(cls, config: Any) -> SoundCloudDownloadService:
+    def from_config(cls, config: Any) -> YouTubeDownloadService:
         music_root = str(config.get("NAVIDROME_MUSIC_ROOT", "/navidrome/root"))
-        raw_enabled = str(config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")).strip().lower()
+        raw_enabled = str(config.get("YOUTUBE_FALLBACK_ENABLED", "0")).strip().lower()
         enabled = raw_enabled not in {"0", "false", "no", "off"}
         threshold = float(
             config.get(
-                "SOUNDCLOUD_MATCH_THRESHOLD",
+                "YOUTUBE_MATCH_THRESHOLD",
                 config.get("DEEZER_MATCH_THRESHOLD", 72.0),
             )
         )
-        timeout = float(config.get("SOUNDCLOUD_REQUEST_TIMEOUT", 25.0))
-        retries = int(config.get("SOUNDCLOUD_REQUEST_RETRIES", 3))
-        raw_force_ipv4 = str(config.get("SOUNDCLOUD_FORCE_IPV4", "1")).strip().lower()
+        timeout = float(config.get("YOUTUBE_REQUEST_TIMEOUT", 25.0))
+        retries = int(config.get("YOUTUBE_REQUEST_RETRIES", 3))
+        raw_force_ipv4 = str(config.get("YOUTUBE_FORCE_IPV4", "1")).strip().lower()
         force_ipv4 = raw_force_ipv4 not in {"0", "false", "no", "off"}
         musicbrainz_service = MusicBrainzService.from_config(config)
         return cls(
@@ -106,10 +106,10 @@ class SoundCloudDownloadService:
         seen: set[str] = set()
         for query in queries:
             try:
-                payload = self._extract_info(f"scsearch{limit}:{query}", download=False)
+                payload = self._extract_info(f"ytsearch{limit}:{query}", download=False)
             except Exception as exc:
                 log.warning(
-                    "SoundCloud metadata lookup failed for %r with query %r: %s",
+                    "YouTube metadata lookup failed for %r with query %r: %s",
                     track.title,
                     query,
                     exc,
@@ -122,7 +122,7 @@ class SoundCloudDownloadService:
                     continue
                 candidate = self._candidate_from_info(entry)
                 dedupe_key = str(
-                    candidate.get("soundcloud_id") or candidate.get("link") or candidate.get("id")
+                    candidate.get("youtube_id") or candidate.get("link") or candidate.get("id")
                 ).strip()
                 if not dedupe_key or dedupe_key in seen:
                     continue
@@ -138,23 +138,23 @@ class SoundCloudDownloadService:
     ) -> dict[str, Any]:
         if not self.is_configured():
             raise ValueError(
-                "SoundCloud fallback is unavailable. Install `yt-dlp` and keep "
-                "`SOUNDCLOUD_FALLBACK=1` to use it."
+                "YouTube fallback is unavailable. Install `yt-dlp` and keep "
+                "`YOUTUBE_FALLBACK=1` to use it."
             )
 
         resolved_track_number = self._ensure_track_number(track, match)
         normalized_match = {
             **match,
             "album": self._preferred_album_name(match),
-            "provider": "soundcloud",
-            "provider_label": "SoundCloud",
+            "provider": "youtube",
+            "provider_label": "YouTube",
             "track_number": resolved_track_number or 0,
         }
         result: dict[str, Any] = {
             "track": track.to_dict(),
             "queries": build_search_queries(track),
             "status": "not_found",
-            "message": "No SoundCloud match found.",
+            "message": "No YouTube match found.",
             "match": normalized_match,
             "candidates": [normalized_match],
         }
@@ -175,10 +175,10 @@ class SoundCloudDownloadService:
 
         file_path, metadata_path = self._download_track(track, result["match"])
         result["status"] = "downloaded"
-        result["message"] = "Track downloaded from SoundCloud."
+        result["message"] = "Track downloaded from YouTube."
         result["match"] = {**result["match"], "path": str(file_path)}
         result["download"] = {
-            "provider": "soundcloud",
+            "provider": "youtube",
             "path": str(file_path),
             "metadata_path": str(metadata_path),
             "completed_at": _utc_timestamp(),
@@ -191,15 +191,15 @@ class SoundCloudDownloadService:
             duration = int(duration / 1000)
 
         link = str(info.get("webpage_url") or info.get("original_url") or info.get("url") or "")
-        soundcloud_id = str(info.get("id") or "").strip()
-        link = _normalize_soundcloud_link(link, soundcloud_id)
+        youtube_id = str(info.get("id") or "").strip()
+        link = _normalize_youtube_link(link, youtube_id)
         raw_album = str(info.get("album") or "").strip()
-        album = raw_album or "SoundCloud"
+        album = raw_album or "YouTube"
         return {
-            "id": f"soundcloud:{soundcloud_id or link}",
-            "provider": "soundcloud",
-            "provider_label": "SoundCloud",
-            "soundcloud_id": soundcloud_id,
+            "id": f"youtube:{youtube_id or link}",
+            "provider": "youtube",
+            "provider_label": "YouTube",
+            "youtube_id": youtube_id,
             "title": str(info.get("track") or info.get("title") or "").strip(),
             "artist": str(
                 info.get("artist") or info.get("creator") or info.get("uploader") or ""
@@ -243,11 +243,11 @@ class SoundCloudDownloadService:
             with self._extractor_factory(options) as ydl:
                 info = ydl.extract_info(url, download=download)
         except Exception as exc:
-            raise RuntimeError(_friendly_soundcloud_error(exc)) from exc
+            raise RuntimeError(_friendly_youtube_error(exc)) from exc
 
         if isinstance(info, dict):
             return info
-        raise ValueError("SoundCloud extractor returned an unexpected payload.")
+        raise ValueError("YouTube extractor returned an unexpected payload.")
 
     def _download_track(
         self,
@@ -255,9 +255,9 @@ class SoundCloudDownloadService:
         match: dict[str, Any],
     ) -> tuple[Path, Path]:
         link = str(match.get("link") or "").strip()
-        link = _normalize_soundcloud_link(link, match.get("soundcloud_id"))
+        link = _normalize_youtube_link(link, match.get("youtube_id"))
         if not link:
-            raise ValueError("The selected SoundCloud match does not include a playable URL.")
+            raise ValueError("The selected YouTube match does not include a playable URL.")
 
         stem_path = self._build_stem_path(match, track)
         stem_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,14 +268,14 @@ class SoundCloudDownloadService:
         )
         output_path = self._resolve_downloaded_path(info, stem_path)
         if not output_path.exists():
-            raise ValueError("SoundCloud download finished, but no audio file was written.")
+            raise ValueError("YouTube download finished, but no audio file was written.")
 
         desired_path = stem_path.with_suffix(output_path.suffix)
         if output_path != desired_path:
             desired_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.replace(desired_path)
             output_path = desired_path
-            log.info("Renamed SoundCloud download to: %s", output_path)
+            log.info("Renamed YouTube download to: %s", output_path)
 
         resolved_title = self._preferred_title(track, match, info, output_path)
         resolved_artist = self._preferred_artist_name(track, match, info)
@@ -291,7 +291,7 @@ class SoundCloudDownloadService:
             album=resolved_album,
             track_number=_coerce_track_number(match.get("track_number") or track.track_number),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
-            provider="soundcloud",
+            provider="youtube",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
             source=link,
             annotation=str(info.get("description") or ""),
@@ -325,7 +325,7 @@ class SoundCloudDownloadService:
         for candidate in matches:
             if candidate.suffix.lower() in _AUDIO_EXTENSIONS:
                 return candidate
-        raise ValueError("Could not determine the saved SoundCloud file path.")
+        raise ValueError("Could not determine the saved YouTube file path.")
 
     def _build_stem_path(self, match: dict[str, Any], track: PlaylistTrack) -> Path:
         artist = _safe_name(self._preferred_artist_name(track, match))
@@ -404,11 +404,11 @@ class SoundCloudDownloadService:
 
     def _preferred_album_name(self, match: dict[str, Any]) -> str:
         album = str(match.get("album") or "").strip()
-        return album or "SoundCloud"
+        return album or "YouTube"
 
     def _preferred_download_album_name(self, info: dict[str, Any] | None = None) -> str:
         album = str((info or {}).get("album") or "").strip()
-        return album or "SoundCloud"
+        return album or "YouTube"
 
     def _candidate_album_names(self, match: dict[str, Any], track: PlaylistTrack) -> list[str]:
         names: list[str] = []
@@ -479,22 +479,22 @@ class _YtDlpLogger:
         if not text:
             return
         if "timed out" in text.lower():
-            log.warning("SoundCloud extractor timed out: %s", text)
+            log.warning("YouTube extractor timed out: %s", text)
         else:
-            log.warning("SoundCloud extractor error: %s", text)
+            log.warning("YouTube extractor error: %s", text)
 
 
-def _friendly_soundcloud_error(exc: Exception) -> str:
+def _friendly_youtube_error(exc: Exception) -> str:
     text = str(exc).strip() or exc.__class__.__name__
     lowered = text.lower()
     if "handshake operation timed out" in lowered or "timed out" in lowered:
         return (
-            "SoundCloud request timed out while fetching metadata. "
-            "Try again, or raise `SOUNDCLOUD_REQUEST_TIMEOUT` in `.env`."
+            "YouTube request timed out while fetching metadata. "
+            "Try again, or raise `YOUTUBE_REQUEST_TIMEOUT` in `.env`."
         )
     if "name resolution" in lowered:
         return (
-            "SoundCloud lookup could not reach the network from the container. "
+            "YouTube lookup could not reach the network from the container. "
             "Check Docker DNS/network access and try again."
         )
     return text
@@ -505,19 +505,13 @@ def _safe_name(value: str) -> str:
     return cleaned[:100] or "Unknown"
 
 
-def _normalize_soundcloud_link(link: str, soundcloud_id: Any = None) -> str:
+def _normalize_youtube_link(link: str, youtube_id: Any = None) -> str:
     cleaned = str(link or "").strip()
-    if cleaned.startswith("soundcloud:"):
-        track_id = cleaned.split(":")[-1]
-        if track_id.isdigit():
-            return f"https://api.soundcloud.com/tracks/{track_id}"
-    if cleaned.startswith("https://api.soundcloud.com/tracks/"):
-        return cleaned
     if cleaned:
         return cleaned
-    fallback = str(soundcloud_id or "").strip()
-    if fallback.isdigit():
-        return f"https://api.soundcloud.com/tracks/{fallback}"
+    fallback = str(youtube_id or "").strip()
+    if fallback:
+        return f"https://www.youtube.com/watch?v={fallback}"
     return ""
 
 

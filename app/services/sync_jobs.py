@@ -41,6 +41,14 @@ def create_sync_job(upload: PlaylistUpload, max_tracks: int) -> str:
             "completed_at": "",
             "review_preparing": False,
             "review_search_status": {"completed": 0, "total": 0, "current_track": ""},
+            "download_progress": {
+                "status": "idle",
+                "current_track": "",
+                "percent": 0,
+                "bytes_downloaded": 0,
+                "bytes_total": 0,
+                "updated_at": "",
+            },
             "summary": {
                 "requested": track_count,
                 "processed": 0,
@@ -102,7 +110,7 @@ def search_low_confidence_candidates(
 ) -> dict[str, Any]:
     item, service = _get_review_item(job_id, item_index)
     track = _track_from_item(item, title=title, artist=artist, album=album)
-    candidates = service.search_track(track, limit=8, include_soundcloud=True)
+    candidates = service.search_track(track, limit=8, include_soundcloud=True, include_youtube=True)
 
     with _JOBS_LOCK:
         job = _require_job_unlocked(job_id)
@@ -117,9 +125,9 @@ def search_low_confidence_candidates(
         target["status"] = "low_confidence"
         target["review_candidates_ready"] = True
         target["message"] = (
-            "Choose a Deezer or SoundCloud match below, or keep refining the search."
+            "Choose a Deezer, SoundCloud, or YouTube match below, or keep refining the search."
             if candidates
-            else "No Deezer or SoundCloud candidates were found for the revised search."
+            else "No fallback candidates were found for the revised search."
         )
         target["completed_at"] = _utc_timestamp()
         _refresh_job_state_unlocked(job_id)
@@ -139,7 +147,7 @@ def resolve_low_confidence_candidate(
     track = _track_from_item(item, title=title, artist=artist, album=album)
     candidates = list(item.get("candidates", [])) if isinstance(item, dict) else []
     if not candidates:
-        candidates = service.search_track(track, limit=8, include_soundcloud=True)
+        candidates = service.search_track(track, limit=8, include_soundcloud=True, include_youtube=True)
     match = next(
         (
             candidate
@@ -248,7 +256,13 @@ def download_selected_low_confidence_candidates(
 
 def _should_prepare_review_candidates(service: SyncService, sync_result: dict[str, Any]) -> bool:
     soundcloud_service = getattr(service, "soundcloud_service", None)
-    if soundcloud_service is None or not soundcloud_service.is_configured():
+    youtube_service = getattr(service, "youtube_service", None)
+    has_fallbacks = False
+    if soundcloud_service is not None and soundcloud_service.is_configured():
+        has_fallbacks = True
+    if youtube_service is not None and youtube_service.is_configured():
+        has_fallbacks = True
+    if not has_fallbacks:
         return False
     return any(
         str(item.get("status", "")).strip() == "low_confidence"
@@ -267,6 +281,7 @@ def _dedupe_review_candidates(candidates: list[dict[str, Any]]) -> list[dict[str
         key = str(
             candidate.get("deezer_id")
             or candidate.get("soundcloud_id")
+            or candidate.get("youtube_id")
             or candidate.get("id")
             or candidate.get("link")
             or (
@@ -342,7 +357,24 @@ def _prepare_review_candidates_for_item(
         if not soundcloud_candidates:
             soundcloud_candidates = soundcloud_service.search_track(track, limit=4, max_queries=3)
 
+    youtube_service = getattr(service, "youtube_service", None)
+    if youtube_service is None or not youtube_service.is_configured():
+        youtube_candidates: list[dict[str, Any]] = []
+    else:
+        youtube_candidates = youtube_service.search_track(track, limit=4, max_queries=1)
+        if not youtube_candidates:
+            youtube_candidates = youtube_service.search_track(track, limit=4, max_queries=3)
+
     candidates = _merge_review_candidates(existing_candidates, soundcloud_candidates)
+    candidates = _merge_review_candidates(candidates, youtube_candidates)
+    provider_labels: list[str] = []
+    if any(candidate.get("provider") == "deezer" for candidate in candidates):
+        provider_labels.append("Deezer")
+    if any(candidate.get("provider") == "soundcloud" for candidate in candidates):
+        provider_labels.append("SoundCloud")
+    if any(candidate.get("provider") == "youtube" for candidate in candidates):
+        provider_labels.append("YouTube")
+    provider_text = " or ".join(provider_labels or ["fallback"])
     return {
         "item_index": item_index,
         "track": track.to_dict(),
@@ -350,9 +382,9 @@ def _prepare_review_candidates_for_item(
         "candidates": candidates[:8],
         "match": candidates[0] if candidates else item.get("match", {}),
         "message": (
-            "Choose a Deezer or SoundCloud match below, or keep the track missing."
+            f"Choose a {provider_text} match below, or keep the track missing."
             if candidates
-            else "No Deezer or SoundCloud candidates were found for this track."
+            else "No fallback candidates were found for this track."
         ),
     }
 
@@ -378,7 +410,7 @@ def _prepare_low_confidence_review_candidates(
     sync_result["review_search_status"] = {
         "completed": 0,
         "total": total,
-        "current_track": "Starting parallel SoundCloud lookups…",
+        "current_track": "Starting parallel fallback lookups...",
     }
     _update_progress(job_id, sync_result)
 
@@ -401,7 +433,7 @@ def _prepare_low_confidence_review_candidates(
                 )
                 target["track"] = track.to_dict()
                 target["review_candidates_ready"] = True
-                target["message"] = f"Could not pre-load SoundCloud matches: {exc}"
+                target["message"] = f"Could not pre-load fallback matches: {exc}"
                 target["completed_at"] = _utc_timestamp()
             else:
                 track_label = str(prepared.get("track_label", "")).strip()
@@ -544,6 +576,15 @@ def _run_sync_job(
 
 
 def _update_progress(job_id: str, snapshot: dict[str, Any]) -> None:
+    if "download_progress" not in snapshot:
+        snapshot["download_progress"] = {
+            "status": "idle",
+            "current_track": "",
+            "percent": 0,
+            "bytes_downloaded": 0,
+            "bytes_total": 0,
+            "updated_at": "",
+        }
     summary = snapshot.get("summary", {})
     requested = int(summary.get("requested", 0))
     processed = int(summary.get("processed", 0))

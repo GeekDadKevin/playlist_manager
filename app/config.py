@@ -36,12 +36,26 @@ class Config:
     DEEZER_ARL = os.getenv("DEEZER_ARL", "")
     DEEZER_QUALITY = os.getenv("DEEZER_QUALITY", "FLAC").upper()
     DEEZER_MATCH_THRESHOLD = float(os.getenv("DEEZER_MATCH_THRESHOLD", "72"))
-    SOUNDCLOUD_FALLBACK_ENABLED = os.getenv("SOUNDCLOUD_FALLBACK_ENABLED", "1")
+    SOUNDCLOUD_FALLBACK_ENABLED = os.getenv(
+        "SOUNDCLOUD_FALLBACK",
+        os.getenv("SOUNDCLOUD_FALLBACK_ENABLED", "1"),
+    )
     SOUNDCLOUD_MATCH_THRESHOLD = float(
         os.getenv("SOUNDCLOUD_MATCH_THRESHOLD", str(DEEZER_MATCH_THRESHOLD))
     )
     SOUNDCLOUD_REQUEST_TIMEOUT = float(os.getenv("SOUNDCLOUD_REQUEST_TIMEOUT", "25"))
     SOUNDCLOUD_REQUEST_RETRIES = int(os.getenv("SOUNDCLOUD_REQUEST_RETRIES", "3"))
     SOUNDCLOUD_FORCE_IPV4 = os.getenv("SOUNDCLOUD_FORCE_IPV4", "1")
+    YOUTUBE_FALLBACK_ENABLED = os.getenv(
+        "YOUTUBE_FALLBACK",
+        os.getenv("YOUTUBE_FALLBACK_ENABLED", "0"),
+    )
+    YOUTUBE_MATCH_THRESHOLD = float(
+        os.getenv("YOUTUBE_MATCH_THRESHOLD", str(DEEZER_MATCH_THRESHOLD))
+    )
+    YOUTUBE_REQUEST_TIMEOUT = float(os.getenv("YOUTUBE_REQUEST_TIMEOUT", "25"))
+    YOUTUBE_REQUEST_RETRIES = int(os.getenv("YOUTUBE_REQUEST_RETRIES", "3"))
+    YOUTUBE_FORCE_IPV4 = os.getenv("YOUTUBE_FORCE_IPV4", "1")
     SETTINGS_FILE = os.getenv("SETTINGS_FILE", str(Path(DATA_DIR) / "settings.json"))
     PLAYLIST_DB_PATH = os.getenv("PLAYLIST_DB_PATH", str(Path(DATA_DIR) / "playlist_history.db"))
+    DOWNLOAD_THREADS = int(os.getenv("DOWNLOAD_THREADS", "1"))

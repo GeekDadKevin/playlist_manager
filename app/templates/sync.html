@@ -54,7 +54,9 @@
         </div>
       </div>
 
-      <p class="help-text"><strong>Current track:</strong> <code id="current-track-label">{% if job.sync.results %}{{ (job.sync.results[-1].track.artist ~ ' - ' ~ job.sync.results[-1].track.title).strip(' -') }}{% else %}Waiting for the first track…{% endif %}</code></p>
+      <p class="help-text"><strong>Current track:</strong> <code id="current-track-label">{% if job.sync.results %}{{ ((job.sync.results[-1].track.artist or '') ~ ' - ' ~ (job.sync.results[-1].track.album or '') ~ ' - ' ~ (job.sync.results[-1].track.track_number or '') ~ ' - ' ~ (job.sync.results[-1].track.title or '')).strip(' -') }}{% else %}Waiting for the first track…{% endif %}</code></p>
+      <p class="help-text"><strong>Download progress:</strong> <span id="download-progress-label">{% if job.sync.download_progress and job.sync.download_progress.percent %}{{ job.sync.download_progress.percent }}%{% else %}—{% endif %}</span></p>
+      <div id="download-progress-list" class="stack"></div>
 
       <ul class="summary-list">
         <li><strong>Mode:</strong> <span id="sync-mode">{{ job.sync.processing_mode }}</span></li>
@@ -79,12 +81,12 @@
         <h2>Resolve low-confidence tracks before Navidrome export</h2>
         <p>
           Anything listed here scored below your Deezer match threshold, so the app paused the Navidrome playlist export.
-          Use the choices below to pick the Deezer or SoundCloud result you want for each song, or keep the track marked missing for now.
+          Use the choices below to pick the Deezer, SoundCloud, or YouTube result you want for each song, or keep the track marked missing for now.
         </p>
 
         {% if review_preparing %}
           <p class="help-text">
-            Running SoundCloud searches for low-confidence tracks now so both provider lists are ready before you make your picks.
+            Running fallback searches for low-confidence tracks now so both provider lists are ready before you make your picks.
           </p>
         {% elif low_confidence_items %}
           <form
@@ -97,7 +99,7 @@
               <button type="submit" name="action" value="skip_all">Accept all remaining as missing</button>
               <button type="submit" name="action" value="download_selected">Download all selected</button>
             </div>
-            <p class="help-text">Pick the Deezer or SoundCloud option you want on each card, then use <strong>Download all selected</strong> to process them in one pass.</p>
+            <p class="help-text">Pick the Deezer, SoundCloud, or YouTube option you want on each card, then use <strong>Download all selected</strong> to process them in one pass.</p>
           </form>
 
           <div class="review-grid">
@@ -105,6 +107,7 @@
               {% set candidates = item.candidates or ([item.match] if item.match else []) %}
               {% set deezer_candidates = candidates | selectattr('provider', 'equalto', 'deezer') | list %}
               {% set soundcloud_candidates = candidates | selectattr('provider', 'equalto', 'soundcloud') | list %}
+              {% set youtube_candidates = candidates | selectattr('provider', 'equalto', 'youtube') | list %}
               <article class="card muted review-card">
                 <h3>{{ item.track.artist or 'Unknown artist' }} — {{ item.track.title or 'Unknown title' }}</h3>
                 <p class="help-text">{{ item.message or 'Manual review required for this track.' }}</p>
@@ -150,7 +153,7 @@
                       <div class="candidate-list provider-group">
                         {% for candidate in deezer_candidates %}
                           <label class="candidate-option">
-                            <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first and not soundcloud_candidates %}checked{% endif %}>
+                            <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first and not soundcloud_candidates and not youtube_candidates %}checked{% endif %}>
                             <span>
                               <strong>[{{ candidate.provider_label or 'Deezer' }}]</strong>
                               <strong>{{ candidate.artist or '—' }} — {{ candidate.title or '—' }}</strong>
@@ -179,12 +182,41 @@
                       </div>
                     {% endif %}
 
+                    {% if youtube_candidates %}
+                      <p class="help-text"><strong>YouTube choices</strong></p>
+                      <div class="candidate-list provider-group">
+                        {% for candidate in youtube_candidates %}
+                          <label class="candidate-option">
+                            <input type="radio" name="candidate_id" value="{{ candidate.deezer_id or candidate.id }}" {% if loop.first and not soundcloud_candidates %}checked{% endif %}>
+                            <span>
+                              <strong>[{{ candidate.provider_label or 'YouTube' }}]</strong>
+                              <strong>{{ candidate.artist or '—' }} — {{ candidate.title or '—' }}</strong>
+                              {% if candidate.album %}<span> · {{ candidate.album }}</span>{% endif %}
+                              {% if candidate.score is defined %}<span> · score {{ candidate.score }}</span>{% endif %}
+                            </span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+
                     <button type="submit" name="action" value="download">Download selected match</button>
                   {% endif %}
                 </form>
               </article>
             {% endfor %}
           </div>
+          <p id="review-empty-note" class="help-text" hidden>No more tracks to review. You can continue once the remaining work completes.</p>
+          {% if pending_export and pending_export.ready and not pending_export.written %}
+            <form
+              id="review-empty-export"
+              action="{{ url_for('web.sync_export_playlist', job_id=job.job_id) }}"
+              method="post"
+              class="stack"
+              hidden
+            >
+              <button type="submit">Commit playlist to Navidrome now</button>
+            </form>
+          {% endif %}
         {% elif pending_export and pending_export.ready and not pending_export.written %}
           <p class="help-text">Manual review is complete. Commit the playlist to Navidrome when you're ready.</p>
           <form action="{{ url_for('web.sync_export_playlist', job_id=job.job_id) }}" method="post" class="stack">
@@ -259,16 +291,33 @@
     function buildTrackLabel(item) {
       const track = item?.track || {};
       const artist = String(track.artist || '').trim();
+      const album = String(track.album || '').trim();
+      const trackNumber = track.track_number ? String(track.track_number).trim() : '';
       const title = String(track.title || '').trim();
       const source = String(track.source || '').replaceAll('\\', '/');
       const filename = source && !source.startsWith('http') ? source.split('/').pop() : '';
+      const parts = [artist, album, trackNumber, title].filter(Boolean);
+      if (parts.length) {
+        return parts.join(' - ');
+      }
       if (artist && filename) {
         return `${artist} - ${filename}`;
       }
-      if (artist && title) {
-        return `${artist} - ${title}`;
-      }
       return filename || title || 'Waiting for the first track…';
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) {
+        return '0 B';
+      }
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let value = bytes;
+      let unitIndex = 0;
+      while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+      }
+      return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIndex]}`;
     }
 
     function renderResults(results) {
@@ -312,6 +361,16 @@
       }
     }
 
+    async function readJsonResponse(response) {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return response.json();
+      }
+      const text = await response.text();
+      const snippet = text.trim().slice(0, 200);
+      throw new Error(`Unexpected response (${response.status}): ${snippet || 'No response body.'}`);
+    }
+
     function finishDownloadProgressDialog(title, message, options = {}) {
       const { redirectUrl = '', closeLabel = 'Continue' } = options;
       pendingDownloadRedirectUrl = redirectUrl;
@@ -336,7 +395,8 @@
       );
       sessionStorage.setItem(syncTabPreferenceKey, 'review');
 
-      const response = await fetch(form.action, {
+      const targetUrl = form.getAttribute('action') || form.action;
+      const response = await fetch(targetUrl, {
         method: 'POST',
         body: formData,
         headers: {
@@ -344,10 +404,16 @@
           'Accept': 'application/json',
         },
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || 'Could not download the selected match.');
       }
+
+      const reviewCard = form.closest('.review-card');
+      if (reviewCard) {
+        reviewCard.remove();
+      }
+      updateReviewEmptyState();
 
       if (payload.job) {
         updatePage(payload.job);
@@ -377,7 +443,8 @@
       );
       sessionStorage.setItem(syncTabPreferenceKey, 'review');
 
-      const response = await fetch(form.action, {
+      const targetUrl = form.getAttribute('action') || form.action;
+      const response = await fetch(targetUrl, {
         method: 'POST',
         body: formData,
         headers: {
@@ -385,10 +452,24 @@
           'Accept': 'application/json',
         },
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || 'Could not download the selected matches.');
       }
+
+      form
+        .querySelectorAll('input[name="selected_item_index"]')
+        .forEach((input) => {
+          const itemIndex = String(input.value || '').trim();
+          if (!itemIndex) {
+            return;
+          }
+          const card = document.querySelector(`.review-card input[name="item_index"][value="${itemIndex}"]`)?.closest('.review-card');
+          if (card) {
+            card.remove();
+          }
+        });
+      updateReviewEmptyState();
 
       if (payload.job) {
         updatePage(payload.job);
@@ -411,7 +492,8 @@
       const summary = job.sync.summary;
       const results = job.sync.results || [];
       const currentTrackLabel = document.getElementById('current-track-label');
-      currentTrackLabel.textContent = results.length ? buildTrackLabel(results[results.length - 1]) : 'Waiting for the first track…';
+      const downloadProgress = job.sync?.download_progress || {};
+      currentTrackLabel.textContent = downloadProgress.current_track || (results.length ? buildTrackLabel(results[results.length - 1]) : 'Waiting for the first track…');
       document.getElementById('job-status').textContent = job.status;
       document.getElementById('job-status').className = `status-pill status-${job.status}`;
       document.getElementById('progress-text').textContent = `${summary.processed} / ${summary.requested} tracks`;
@@ -425,6 +507,41 @@
       document.getElementById('count-low').textContent = summary.low_confidence;
       document.getElementById('count-missing').textContent = summary.not_found;
       document.getElementById('count-failed').textContent = summary.failed;
+
+      const downloadProgressLabel = document.getElementById('download-progress-label');
+      const downloadProgressList = document.getElementById('download-progress-list');
+      if (downloadProgressLabel) {
+        const percent = Number(downloadProgress.percent || 0);
+        const bytesDownloaded = Number(downloadProgress.bytes_downloaded || 0);
+        const bytesTotal = Number(downloadProgress.bytes_total || 0);
+        if (bytesTotal > 0) {
+          downloadProgressLabel.textContent = `${percent}% (${formatBytes(bytesDownloaded)} / ${formatBytes(bytesTotal)})`;
+        } else if (percent > 0) {
+          downloadProgressLabel.textContent = `${percent}%`;
+        } else {
+          downloadProgressLabel.textContent = '—';
+        }
+      }
+      if (downloadProgressList) {
+        const items = Array.isArray(downloadProgress.items) ? downloadProgress.items : [];
+        const activeItems = items.filter((item) => Number(item.percent || 0) < 100);
+        if (job.sync.processing_mode === 'parallel' && activeItems.length) {
+          downloadProgressList.innerHTML = activeItems
+            .map((item) => {
+              const itemPercent = Number(item.percent || 0);
+              const itemBytes = Number(item.bytes_downloaded || 0);
+              const itemTotal = Number(item.bytes_total || 0);
+              const itemLabel = item.track || 'Unknown track';
+              const detail = itemTotal > 0
+                ? `${itemPercent}% (${formatBytes(itemBytes)} / ${formatBytes(itemTotal)})`
+                : `${itemPercent}%`;
+              return `<p class="help-text"><strong>${escapeHtml(itemLabel)}</strong> — ${escapeHtml(detail)}</p>`;
+            })
+            .join('');
+        } else {
+          downloadProgressList.innerHTML = '';
+        }
+      }
 
       const playlistExport = job.sync.playlist_export || null;
       const playlistExportPath = document.getElementById('playlist-export-path');
@@ -449,6 +566,22 @@
       }
 
       renderResults(results);
+      updateReviewEmptyState(job);
+
+      const statusByIndex = new Map(
+        results.map((item) => [String(item.index), String(item.status || '').trim()])
+      );
+      document.querySelectorAll('.review-card input[name="item_index"]').forEach((input) => {
+        const itemIndex = String(input.value || '').trim();
+        if (!itemIndex) {
+          return;
+        }
+        const status = statusByIndex.get(itemIndex);
+        if (status && status !== 'low_confidence') {
+          input.closest('.review-card')?.remove();
+        }
+      });
+      updateReviewEmptyState(job);
 
       const reviewPreparing = Boolean(job.sync?.review_preparing);
       if (reviewSearchStatus && job.sync?.review_search_status) {
@@ -482,6 +615,21 @@
       ) {
         reviewReloaded = true;
         window.location.reload();
+      }
+    }
+
+    function updateReviewEmptyState(job = null) {
+      const hasCards = Boolean(document.querySelector('.review-card'));
+      const emptyNote = document.getElementById('review-empty-note');
+      if (emptyNote) {
+        emptyNote.hidden = hasCards;
+      }
+
+      const emptyExport = document.getElementById('review-empty-export');
+      if (emptyExport) {
+        const playlistExport = job?.sync?.playlist_export || null;
+        const canExport = playlistExport?.ready && !playlistExport?.written;
+        emptyExport.hidden = hasCards || !canExport;
       }
     }
 

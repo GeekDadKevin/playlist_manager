@@ -2,12 +2,46 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import json
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, request
+from werkzeug.exceptions import HTTPException, InternalServerError
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+
+
+def _load_json_config() -> None:
+    config_path = Path(__file__).resolve().parent.parent / "config.json"
+    if not config_path.exists():
+        return
+
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logging.getLogger(__name__).warning("Config JSON read failed: %s", exc)
+        return
+
+    if not isinstance(raw, dict):
+        logging.getLogger(__name__).warning("Config JSON must be an object of key/value pairs.")
+        return
+
+    for key, value in raw.items():
+        if value is None:
+            continue
+        if os.environ.get(str(key), ""):
+            continue
+        if isinstance(value, bool):
+            os.environ[str(key)] = "1" if value else "0"
+        elif isinstance(value, (int, float, str)):
+            os.environ[str(key)] = str(value)
+        else:
+            logging.getLogger(__name__).warning("Config JSON key %s has unsupported type.", key)
+
+
+_load_json_config()
 
 
 def _configure_logging(data_dir: str) -> None:
@@ -71,7 +105,28 @@ def create_app(config_class: type[object] | None = None) -> Flask:
     app.register_blueprint(api_bp, url_prefix="/api")
     start_playlist_scheduler(app)
 
+    _register_error_handlers(app)
+
     return app
+
+
+def _register_error_handlers(app: Flask) -> None:
+    log = logging.getLogger(__name__)
+
+    def handle_http_error(error: HTTPException):
+        log.warning(
+            "HTTP %s %s %s", error.code, request.method, request.path
+        )
+        return error
+
+    def handle_unhandled_error(error: Exception):
+        if isinstance(error, HTTPException):
+            return handle_http_error(error)
+        log.exception("Unhandled error during %s %s", request.method, request.path)
+        return InternalServerError()
+
+    app.register_error_handler(HTTPException, handle_http_error)
+    app.register_error_handler(Exception, handle_unhandled_error)
 
 
 app = create_app()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 from flask import (
     Blueprint,
@@ -52,6 +53,7 @@ from app.services.sync_jobs import (
 )
 
 web_bp = Blueprint("web", __name__)
+log = logging.getLogger(__name__)
 
 
 @web_bp.get("/favicon.ico")
@@ -162,6 +164,18 @@ def settings_page() -> ResponseReturnValue:
                     ", ".join(existing_settings.get("playlist_targets", [])),
                 ),
                 "sync_with_downloads": request.form.get("sync_with_downloads", ""),
+                "soundcloud_fallback": request.form.get(
+                    "soundcloud_fallback",
+                    existing_settings.get("soundcloud_fallback", True),
+                ),
+                "youtube_fallback": request.form.get(
+                    "youtube_fallback",
+                    existing_settings.get("youtube_fallback", False),
+                ),
+                "download_threads": request.form.get(
+                    "download_threads",
+                    existing_settings.get("download_threads", 1),
+                ),
             },
         )
 
@@ -178,7 +192,16 @@ def settings_page() -> ResponseReturnValue:
 
         return redirect(url_for("web.settings_page"))
 
-    settings = load_settings(current_app.config["SETTINGS_FILE"])
+    settings_path = Path(current_app.config["SETTINGS_FILE"])
+    settings = load_settings(settings_path)
+    if not settings_path.exists():
+        settings["soundcloud_fallback"] = _bool_config(
+            current_app.config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")
+        )
+        settings["youtube_fallback"] = _bool_config(
+            current_app.config.get("YOUTUBE_FALLBACK_ENABLED", "0")
+        )
+        settings["download_threads"] = int(current_app.config.get("DOWNLOAD_THREADS", 1) or 1)
     history = get_playlist_stats(current_app.config["PLAYLIST_DB_PATH"])
     return render_template(
         "settings.html",
@@ -426,11 +449,27 @@ def sync_upload() -> ResponseReturnValue:
 
 
 def _start_sync_for_upload(upload, *, max_tracks: int) -> str:
-    service = DeezerDownloadService.from_config(current_app.config)
+    settings_path = Path(current_app.config["SETTINGS_FILE"])
+    app_settings = load_settings(settings_path)
+    if not settings_path.exists():
+        app_settings["soundcloud_fallback"] = _bool_config(
+            current_app.config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")
+        )
+        app_settings["youtube_fallback"] = _bool_config(
+            current_app.config.get("YOUTUBE_FALLBACK_ENABLED", "0")
+        )
+        app_settings["download_threads"] = int(current_app.config.get("DOWNLOAD_THREADS", 1) or 1)
+    sync_config = {
+        **current_app.config,
+        "SOUNDCLOUD_FALLBACK_ENABLED": app_settings.get("soundcloud_fallback", True),
+        "YOUTUBE_FALLBACK_ENABLED": app_settings.get("youtube_fallback", False),
+        "DOWNLOAD_THREADS": app_settings.get("download_threads", 1),
+    }
+    service = DeezerDownloadService.from_config(sync_config)
     if not service.is_configured():
         raise ValueError(
             "Configure `DEEZER_ARL` and `NAVIDROME_MUSIC_ROOT` to enable live downloads. "
-            "SoundCloud is only used during low-confidence review."
+            "SoundCloud and YouTube are only used during low-confidence review."
         )
 
     job_id = start_sync_job(
@@ -452,6 +491,10 @@ def _wants_json_response() -> bool:
         return True
     best_match = request.accept_mimetypes.best_match(["application/json", "text/html"])
     return best_match == "application/json"
+
+
+def _bool_config(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 @web_bp.get("/sync/<job_id>")
@@ -501,6 +544,7 @@ def sync_review_bulk_action(job_id: str) -> ResponseReturnValue:
         else:
             raise ValueError("Unknown bulk review action.")
     except Exception as exc:  # pragma: no cover - runtime/network dependent
+        log.exception("Review bulk action failed for job %s", job_id)
         error_message = f"Could not update the low-confidence tracks: {exc}"
         if _wants_json_response():
             return {"ok": False, "error": error_message}, 400
@@ -573,6 +617,7 @@ def sync_review_action(job_id: str) -> ResponseReturnValue:
         else:
             raise ValueError("Unknown review action.")
     except Exception as exc:  # pragma: no cover - runtime/network dependent
+        log.exception("Review action failed for job %s", job_id)
         error_message = f"Could not update the low-confidence track: {exc}"
         if _wants_json_response():
             return {"ok": False, "error": error_message}, 400
@@ -605,11 +650,18 @@ def sync_review_action(job_id: str) -> ResponseReturnValue:
 @web_bp.post("/sync/<job_id>/export")
 def sync_export_playlist(job_id: str) -> ResponseReturnValue:
     try:
+        log.info("Exporting playlist for job %s", job_id)
         job = export_sync_job_playlist(job_id)
         export_result = job.get("sync", {}).get("playlist_export", {})
     except Exception as exc:  # pragma: no cover - runtime/filesystem dependent
+        log.exception("Playlist export failed for job %s", job_id)
         flash(f"Could not commit the playlist to Navidrome: {exc}", "error")
     else:
+        log.info(
+            "Playlist export complete for job %s: %s",
+            job_id,
+            export_result.get("target_path", ""),
+        )
         flash(
             f"Navidrome playlist updated: {export_result.get('filename', 'playlist.m3u')} "
             f"({export_result.get('entry_count', 0)} track(s)).",

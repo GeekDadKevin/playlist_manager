@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 from urllib.parse import urlparse
 
 _ALLOWED_FLASK_ENVS = {"development", "production", "testing"}
@@ -11,6 +13,8 @@ _ALLOWED_DEEZER_QUALITIES = {"FLAC", "MP3_320", "MP3_128"}
 
 def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
     values = os.environ if env is None else env
+    if env is None:
+        values = _apply_config_json(values)
     errors: list[str] = []
 
     flask_env = _get_value(values, "FLASK_ENV", "development").lower()
@@ -100,6 +104,30 @@ def main() -> int:
 
 def _get_value(values: Mapping[str, object], name: str, default: str = "") -> str:
     return str(values.get(name, default)).strip()
+
+
+def _apply_config_json(values: Mapping[str, object]) -> Mapping[str, object]:
+    config_path = Path(__file__).resolve().parent / "config.json"
+    if not config_path.exists():
+        return values
+
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return values
+
+    if not isinstance(raw, dict):
+        return values
+
+    merged = dict(values)
+    for key, value in raw.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            merged[str(key)] = "1" if value else "0"
+        elif isinstance(value, (int, float, str)):
+            merged[str(key)] = str(value)
+    return merged
 
 
 def _get_playlist_dir_value(values: Mapping[str, object]) -> str:

@@ -20,6 +20,7 @@ services:
       DEEZER_MATCH_THRESHOLD: ${DEEZER_MATCH_THRESHOLD:-72}
     volumes:
       - .:/app
+      - ./config.json:/app/config.json:ro
       - playlist-data:/app/data
       - ${NAVIDROME_MUSIC_ROOT:?Set NAVIDROME_MUSIC_ROOT in .env}:/navidrome/root
       - ${NAVIDROME_PLAYLIST_DIR:?Set NAVIDROME_PLAYLIST_DIR in .env}:/navidrome/playlist

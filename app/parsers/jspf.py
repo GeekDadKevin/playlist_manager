@@ -25,11 +25,15 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
             continue
 
         extension_metadata = _track_extension_metadata(item)
+        track_metadata = _track_metadata(item)
+        additional_info = _additional_info(track_metadata)
         identifier = _text_value(item.get("identifier") or extension_metadata.get("identifier"))
         title = (
             _text_value(item.get("title"))
             or _text_value(item.get("name"))
             or _text_value(extension_metadata.get("title"))
+            or _text_value(track_metadata.get("track_name"))
+            or _text_value(additional_info.get("track_name"))
             or _title_from_identifier(identifier)
         ).strip()
         if not title:
@@ -40,12 +44,16 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
             or _text_value(item.get("artist"))
             or _text_value(extension_metadata.get("artist"))
             or _text_value(extension_metadata.get("artists"))
+            or _text_value(track_metadata.get("artist_name"))
+            or _text_value(additional_info.get("artist_name"))
         ).strip()
         album = (
             _text_value(item.get("album"))
             or _text_value(item.get("albumtitle"))
             or _text_value(extension_metadata.get("album"))
             or _text_value(extension_metadata.get("release_title"))
+            or _text_value(track_metadata.get("release_name"))
+            or _text_value(additional_info.get("release_name"))
         ).strip()
         duration_seconds = _ms_to_seconds(
             item.get("duration") or extension_metadata.get("duration")
@@ -55,15 +63,45 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
             or item.get("tracknum")
             or item.get("trackNum")
             or item.get("track_number")
+            or item.get("tracknumber")
+            or item.get("track_position")
             or extension_metadata.get("track")
             or extension_metadata.get("tracknum")
             or extension_metadata.get("track_number")
+            or extension_metadata.get("tracknumber")
+            or extension_metadata.get("track_position")
+            or track_metadata.get("track_number")
+            or track_metadata.get("tracknumber")
+            or track_metadata.get("track_position")
+            or additional_info.get("track_number")
+            or additional_info.get("tracknumber")
+            or additional_info.get("track_position")
         )
         annotation = (
             _text_value(item.get("annotation"))
             or _text_value(item.get("description"))
             or _text_value(playlist_data.get("annotation"))
         )
+        recording_mbid = _text_value(
+            track_metadata.get("recording_mbid")
+            or track_metadata.get("musicbrainz_recording_id")
+            or additional_info.get("recording_mbid")
+            or additional_info.get("musicbrainz_recording_id")
+            or additional_info.get("recording_id")
+        ).strip()
+        release_mbid = _text_value(
+            track_metadata.get("release_mbid")
+            or track_metadata.get("musicbrainz_release_id")
+            or additional_info.get("release_mbid")
+            or additional_info.get("musicbrainz_release_id")
+            or additional_info.get("release_id")
+        ).strip()
+
+        extra: dict[str, Any] = {"annotation": annotation}
+        if recording_mbid:
+            extra["musicbrainz_recording_id"] = recording_mbid
+        if release_mbid:
+            extra["musicbrainz_release_id"] = release_mbid
 
         tracks.append(
             PlaylistTrack(
@@ -73,7 +111,7 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
                 track_number=track_number,
                 duration_seconds=duration_seconds,
                 source=identifier.strip(),
-                extra={"annotation": annotation},
+                extra=extra,
             )
         )
 
@@ -133,6 +171,20 @@ def _track_extension_metadata(item: dict[str, Any]) -> dict[str, Any]:
             if isinstance(additional, dict):
                 return {**value, **additional}
             return value
+    return {}
+
+
+def _track_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    track_metadata = item.get("track_metadata")
+    if isinstance(track_metadata, dict):
+        return track_metadata
+    return {}
+
+
+def _additional_info(track_metadata: dict[str, Any]) -> dict[str, Any]:
+    additional_info = track_metadata.get("additional_info")
+    if isinstance(additional_info, dict):
+        return additional_info
     return {}
 
 

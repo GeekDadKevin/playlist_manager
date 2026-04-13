@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -33,6 +34,8 @@ _MEDIA_EXTENSIONS = {
     ".wma",
 }
 
+log = logging.getLogger(__name__)
+
 
 def export_navidrome_playlist(
     playlist_dir: str | Path,
@@ -52,6 +55,13 @@ def export_navidrome_playlist(
     seen_missing: set[tuple[str, str]] = set()
     playable_count = 0
     missing_count = 0
+
+    log.info(
+        "Exporting playlist '%s' to %s (items=%d)",
+        playlist_name,
+        target_path,
+        len(sync_results),
+    )
 
     for item in sync_results:
         track = item.get("track") if isinstance(item, dict) else {}
@@ -135,6 +145,10 @@ def _extract_media_path(
     media_roots: list[str],
     media_path_prefix: str,
 ) -> str:
+    status = str(item.get("status", "")).strip().lower()
+    if status and status not in {"downloaded", "already_available"}:
+        return ""
+
     for source_name, candidate in (
         ("resolved_match", item.get("resolved_match", {}).get("path")),
         ("match", item.get("match", {}).get("path")),

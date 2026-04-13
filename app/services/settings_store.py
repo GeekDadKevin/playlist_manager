@@ -34,6 +34,9 @@ def default_settings() -> dict[str, Any]:
         "schedule_time": "06:00",
         "playlist_targets": ["weekly exploration", "weekly jams"],
         "sync_with_downloads": False,
+        "soundcloud_fallback": True,
+        "youtube_fallback": False,
+        "download_threads": 1,
         "last_run_at": "",
         "last_run_status": "never",
         "last_run_message": "Not run yet.",
@@ -85,6 +88,15 @@ def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
     )
     settings["sync_with_downloads"] = _bool_value(
         raw.get("sync_with_downloads", settings["sync_with_downloads"])
+    )
+    settings["soundcloud_fallback"] = _bool_value(
+        raw.get("soundcloud_fallback", settings["soundcloud_fallback"])
+    )
+    settings["youtube_fallback"] = _bool_value(
+        raw.get("youtube_fallback", settings["youtube_fallback"])
+    )
+    settings["download_threads"] = _normalize_threads(
+        raw.get("download_threads", settings["download_threads"])
     )
     settings["playlist_targets"] = _normalize_targets(raw.get("playlist_targets"))
 
@@ -189,3 +201,11 @@ def _bool_value(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_threads(value: Any) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(8, count))

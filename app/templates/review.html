@@ -49,7 +49,7 @@
             These are fallback/manual actions only. The normal import flow already starts the download sync automatically and pauses for manual review if any match comes back low-confidence before the Navidrome playlist is written.
           </p>
           {% if not download_configured %}
-            <p>Set <code>DEEZER_ARL</code> and <code>NAVIDROME_MUSIC_ROOT</code> in <code>.env</code> to enable live downloads. SoundCloud stays available only during low-confidence review.</p>
+            <p>Set <code>DEEZER_ARL</code> and <code>NAVIDROME_MUSIC_ROOT</code> in <code>.env</code> to enable live downloads. SoundCloud and YouTube stay available only during low-confidence review.</p>
           {% endif %}
         </form>
       {% endif %}
