@@ -22,6 +22,7 @@
           {% endif %}
           <a class="app-tab {% if request.endpoint == 'web.stats_page' %}is-active{% endif %}" href="{{ url_for('web.stats_page') }}">Stats</a>
           <a class="app-tab {% if request.endpoint == 'web.settings_page' %}is-active{% endif %}" href="{{ url_for('web.settings_page') }}">Settings</a>
+          <a class="app-tab {% if request.endpoint == 'web.tools_page' %}is-active{% endif %}" href="{{ url_for('web.tools_page') }}">Tools</a>
           <a class="app-tab {% if request.endpoint == 'web.logs_page' %}is-active{% endif %}" href="{{ url_for('web.logs_page') }}">Logs</a>
         </nav>
       </div>

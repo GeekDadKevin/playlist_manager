@@ -137,6 +137,17 @@ def test_sync_status_page_and_json_endpoint() -> None:
     assert status_response.json["sync"]["summary"]["requested"] == 1
 
 
+def test_tools_page_lists_audio_integrity_checker(tmp_path) -> None:
+    app = create_app()
+    app.config.update(TESTING=True, NAVIDROME_MUSIC_ROOT=str(tmp_path))
+    client = app.test_client()
+
+    response = client.get("/tools")
+
+    assert response.status_code == 200
+    assert b"Check Audio Integrity" in response.data
+
+
 def test_sync_status_page_shows_low_confidence_review_controls(monkeypatch) -> None:
     app = create_app()
     app.config.update(TESTING=True)

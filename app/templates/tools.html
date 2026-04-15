@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Library Tools{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>Library Tools</h2>
+  <p>
+    Run maintenance jobs against the music library at
+    <code>{{ music_root or "(not configured)" }}</code>.
+    Each tool streams live output as it runs.
+    Use <strong>Dry Run</strong> to preview changes without writing anything.
+  </p>
+  {% if not music_root %}
+  <p class="flash flash-error">
+    <strong>NAVIDROME_MUSIC_ROOT</strong> is not set.
+    Configure it in <code>.env</code> before running any tool.
+  </p>
+  {% endif %}
+</section>
+
+<div class="tools-grid">
+  {% for tool_id, tool in tools.items() %}
+  <section class="card tool-card" id="card-{{ tool_id }}">
+    <div class="tool-header">
+      <h3 class="tool-title">{{ tool.label }}</h3>
+      <span class="tool-status" id="status-{{ tool_id }}">idle</span>
+    </div>
+    <p class="tool-desc">{{ tool.description }}</p>
+
+    <div class="tool-actions">
+      <label class="checkbox-row">
+        <input type="checkbox" id="dry-{{ tool_id }}">
+        <span>Dry run (preview only)</span>
+      </label>
+      <label class="limit-row">
+        <span>Limit</span>
+        <input type="number" id="limit-{{ tool_id }}" min="1" step="1" placeholder="all"
+               style="width:5rem;padding:.2rem .4rem;font-size:.85rem;">
+      </label>
+      <button
+        class="btn-tool-run"
+        id="btn-{{ tool_id }}"
+        data-tool="{{ tool_id }}"
+        {% if not music_root %}disabled{% endif %}
+      >Run</button>
+    </div>
+
+    <div class="tool-log-shell" id="shell-{{ tool_id }}">
+      <pre class="tool-log-output" id="log-{{ tool_id }}">Ready.</pre>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<style>
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+    gap: 1.25rem;
+  }
+  .tool-card { display: flex; flex-direction: column; gap: .75rem; }
+
+  .tool-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .5rem;
+  }
+  .tool-title { margin: 0; }
+
+  .tool-status {
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: .15rem .4rem;
+    border-radius: 3px;
+    background: var(--color-border, #333);
+    color: var(--color-muted, #888);
+  }
+  .tool-status.running  { background: #2a4a7f; color: #7eb6ff; }
+  .tool-status.done     { background: #1e4a2a; color: #6fcf97; }
+  .tool-status.error    { background: #5a1e1e; color: #f08080; }
+  .tool-status.busy     { background: #4a3a10; color: #f5c542; }
+
+  .tool-desc { margin: 0; font-size: .85rem; color: var(--color-muted, #999); }
+
+  .tool-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .limit-row {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .85rem;
+  }
+    background: transparent;
+    color: var(--color-accent, #4a8);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .btn-tool-run:hover:not(:disabled) { background: var(--color-accent, #4a8); color: #fff; }
+  .btn-tool-run:disabled { opacity: .45; cursor: not-allowed; }
+
+  .tool-log-shell {
+    background: var(--color-surface, #111);
+    border: 1px solid var(--color-border, #333);
+    border-radius: 4px;
+    height: 340px;
+    overflow-y: auto;
+    padding: .5rem;
+    flex: 1;
+  }
+  .tool-log-output {
+    margin: 0;
+    font-size: .76rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-line-fixed  { color: #6fcf97; }
+  .log-line-created { color: #7eb6ff; }
+  .log-line-deleted { color: #f08080; }
+  .log-line-skip   { color: #888; }
+  .log-line-error  { color: #f08080; font-weight: bold; }
+  .log-line-warning { color: #f5c542; font-weight: bold; }
+  .log-line-summary { color: #f5c542; font-weight: bold; }
+  .log-line-dry    { color: #c9a; font-style: italic; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const streamBase = {{ url_for('web.tools_stream', tool='PLACEHOLDER') | tojson }}.replace('PLACEHOLDER', '');
+
+  function classify(line) {
+    const l = line.toLowerCase();
+    if (l.startsWith('summary')) return 'log-line-summary';
+    if (l.startsWith('warn') || l.includes('warn:')) return 'log-line-warning';
+    if (l.includes('fixed:') || l.startsWith('  fixed:')) return 'log-line-fixed';
+    if (l.includes('created:') || l.startsWith('  created:')) return 'log-line-created';
+    if (l.includes('deleted:') || l.startsWith('  deleted:')) return 'log-line-deleted';
+    if (l.startsWith('  skip') || l.includes('already correct')) return 'log-line-skip';
+    if (l.includes('error') || l.startsWith('error')) return 'log-line-error';
+    if (l.includes('[dry-run]')) return 'log-line-dry';
+    return '';
+  }
+
+  function setStatus(id, state) {
+    const el = document.getElementById('status-' + id);
+    if (!el) return;
+    el.textContent = state;
+    el.className = 'tool-status ' + state;
+  }
+
+  function appendLine(logEl, shell, text) {
+    const cls = classify(text);
+    const safe = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const atBottom = shell.scrollHeight - shell.scrollTop - shell.clientHeight < 50;
+    logEl.innerHTML += (logEl.innerHTML ? '\n' : '') + (cls ? `<span class="${cls}">${safe}</span>` : safe);
+    if (atBottom) shell.scrollTop = shell.scrollHeight;
+  }
+
+  document.querySelectorAll('[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool;
+      const dryRun = document.getElementById('dry-' + tool)?.checked ? '1' : '0';
+      const limitVal = document.getElementById('limit-' + tool)?.value.trim();
+      const logEl  = document.getElementById('log-' + tool);
+      const shell  = document.getElementById('shell-' + tool);
+
+      logEl.textContent = '';
+      setStatus(tool, 'running');
+      btn.disabled = true;
+
+      let url = streamBase + tool + '?dry_run=' + dryRun;
+      if (limitVal && /^\d+$/.test(limitVal)) url += '&limit=' + limitVal;
+      const es = new EventSource(url);
+
+      es.onmessage = e => {
+        const text = e.data;
+        if (text.startsWith('__EXIT__')) {
+          const code = parseInt(text.replace('__EXIT__', ''), 10);
+          es.close();
+          btn.disabled = false;
+          setStatus(tool, code === 0 ? 'done' : 'error');
+          return;
+        }
+        if (text === '__BUSY__') {
+          es.close();
+          btn.disabled = false;
+          setStatus(tool, 'busy');
+          appendLine(logEl, shell, 'This tool is already running. Please wait.');
+          return;
+        }
+        appendLine(logEl, shell, text);
+      };
+
+      es.onerror = () => {
+        es.close();
+        btn.disabled = false;
+        setStatus(tool, 'error');
+        appendLine(logEl, shell, 'Connection error — check the server logs.');
+      };
+    });
+  });
+})();
+</script>
+{% endblock %}

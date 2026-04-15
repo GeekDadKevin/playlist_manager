@@ -694,3 +694,50 @@ def logs_clear() -> ResponseReturnValue:
     if log_path.exists():
         log_path.write_text("", encoding="utf-8")
     return redirect(url_for("web.logs_page"))
+
+
+# ---------------------------------------------------------------------------
+# Library tools
+# ---------------------------------------------------------------------------
+
+from app.services.library_tools import TOOLS, stream_tool  # noqa: E402
+
+
+@web_bp.get("/tools")
+def tools_page() -> str:
+    music_root = current_app.config.get("NAVIDROME_MUSIC_ROOT", "").strip()
+    return render_template("tools.html", tools=TOOLS, music_root=music_root)
+
+
+@web_bp.get("/tools/stream/<tool>")
+def tools_stream(tool: str) -> ResponseReturnValue:
+    if tool not in TOOLS:
+        return {"error": f"Unknown tool: {tool!r}"}, 400
+
+    music_root = current_app.config.get("NAVIDROME_MUSIC_ROOT", "").strip()
+    if not music_root:
+        def _no_root():
+            yield "data: ERROR: NAVIDROME_MUSIC_ROOT is not set.\n\n"
+            yield "data: __EXIT__1\n\n"
+        return current_app.response_class(
+            _no_root(),
+            mimetype="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        )
+
+    dry_run = request.args.get("dry_run", "0") == "1"
+    limit_raw = request.args.get("limit", "").strip()
+    limit = int(limit_raw) if limit_raw.isdigit() else None
+    root = Path(music_root)
+
+    def generate():
+        for line in stream_tool(tool, root, dry_run=dry_run, limit=limit):
+            # Escape newlines inside a single SSE data field.
+            safe = line.replace("\n", " ")
+            yield f"data: {safe}\n\n"
+
+    return current_app.response_class(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )

@@ -9,6 +9,7 @@ A Docker-friendly Flask service for importing playlists from `m3u`, `jspf`, Navi
 - `ruff` for linting and formatting
 - `pytest` for parser and matching tests
 - `docker compose` for local orchestration
+- `ffmpeg` inside the Docker image for decode-based audio validation
 
 ## Quick start
 
@@ -96,6 +97,8 @@ NAVIDROME_M3U_PATH_PREFIX=..
 ```
 
 Docker Compose mounts those host folders into `/navidrome/playlist` and `/navidrome/root` inside the container, so the app always works with stable in-container paths while you only configure real host locations in `.env`.
+
+The Docker image also installs `ffmpeg`, so the Library Tools page can run a real decode-based audio integrity scan inside the container instead of only checking metadata headers.
 
 The playlist exporter rewrites absolute paths rooted under `NAVIDROME_MUSIC_ROOT` into relative `.m3u` entries like `../Artist/Album/track.flac`, which is the format Navidrome expects when the playlist file lives inside a `playlists/` subfolder.
 
