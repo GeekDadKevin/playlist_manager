@@ -186,6 +186,7 @@ def fix_tags(
     Returns all log lines (also printed to stdout as they are generated).
     """
     lines: list[str] = []
+    inventory_summary = None
     started_at = datetime.datetime.now(datetime.UTC).isoformat()
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     library_index_db = str(
