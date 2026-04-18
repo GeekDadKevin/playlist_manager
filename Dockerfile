@@ -13,7 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev
 
-COPY env_config.py /env_config.py
+COPY env_config.py /app/env_config.py
 COPY validate_env.py /validate_env.py
 COPY app ./app
 COPY scripts /scripts
