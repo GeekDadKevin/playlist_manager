@@ -10,53 +10,6 @@
     Each tool streams live output as it runs.
     Use <strong>Dry Run</strong> to preview changes without writing anything.
   </p>
-  <p class="tool-desc">
-    Recommended order: Refresh Library Catalog, Check Audio Integrity, Identify By Structure,
-    Fix Audio Tags, Identify Tracks By Audio, then Sync XML Sidecars.
-  </p>
-  {% if not music_root %}
-  <p class="flash flash-error">
-    <strong>NAVIDROME_MUSIC_ROOT</strong> is not set.
-    Configure it in <code>.env</code> before running any tool.
-  </p>
-  {% endif %}
-</section>
-
-<section class="card tool-run-banner" id="tool-run-banner" hidden>
-  <div>
-    <strong id="tool-run-banner-title">A library tool is running.</strong>
-    <div class="tool-desc" id="tool-run-banner-copy">
-      Stay on this page while it finishes. Opening the status dialog will show the live session log.
-    </div>
-  </div>
-  <button type="button" class="btn-tool-run" id="tool-run-banner-button">View Status</button>
-</section>
-
-<section class="card">
-  <div class="tool-report-header">
-    <div>
-      <h3 style="margin:0;">Catalog Report</h3>
-      <p class="tool-desc" style="margin-top:.3rem;">
-        Review the current indexed state, including MusicBrainz verification coverage, before running maintenance jobs.
-        Use refresh when the catalog is stale or has not been built yet.
-      </p>
-    </div>
-    {% if music_root %}
-    <a class="btn-tool-run" href="{{ url_for('web.tools_page', report_filter=report_filter, refresh_catalog=1) }}">Refresh Catalog</a>
-    {% endif %}
-  </div>
-
-  {% if report_counts %}
-  <div class="tool-summary-grid">
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Indexed Audio</span>
-      <span class="tool-summary-value">{{ report_counts.indexed_audio }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Needs MB Verify</span>
-      <span class="tool-summary-value">{{ report_counts.musicbrainz_pending }}</span>
-    </div>
-    <div class="tool-summary-item">
       <span class="tool-summary-key">MB Stale</span>
       <span class="tool-summary-value">{{ report_counts.musicbrainz_stale }}</span>
     </div>

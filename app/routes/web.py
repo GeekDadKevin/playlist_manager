@@ -967,40 +967,14 @@ def tools_page() -> str:
         str(current_app.config.get("ACOUSTID_API_KEY", "")).strip()
     )
     identify_audio_last_run: dict[str, object] | None = None
-    report_filter = request.args.get("report_filter", "missing-xml").strip().lower()
-    report_limit = request.args.get("report_limit", 50, type=int)
     refresh_catalog = request.args.get("refresh_catalog", "0") == "1"
-    report_counts: dict[str, int] = {}
-    report_items: list[dict[str, str]] = []
-    report_filters = [
-        ("musicbrainz-pending", "Needs MB Verify"),
-        ("accepted-as-is", "Accepted As Is"),
-        ("missing-xml", "Missing XML"),
-        ("incomplete-xml", "Incomplete XML"),
-        ("corrupted-audio", "Corrupted Audio"),
-        ("non-deezer-source", "Non-Deezer Source"),
-        ("orphaned-xml", "Orphaned XML"),
-    ]
 
     if music_root:
         root = Path(music_root)
         db_path = current_app.config["LIBRARY_INDEX_DB_PATH"]
         try:
-            if root.is_dir():
-                if refresh_catalog:
-                    refresh_library_index(db_path, root)
-                report_counts = get_library_report_counts(db_path, root)
-                report_items = list_library_report_items(
-                    db_path,
-                    root,
-                    report_filter=report_filter,
-                    limit=max(report_limit, 1),
-                )
-                identify_audio_last_run = load_latest_library_tool_run(
-                    db_path,
-                    tool_name="identify-audio",
-                    root=root,
-                )
+            if root.is_dir() and refresh_catalog:
+                refresh_library_index(db_path, root)
             elif refresh_catalog:
                 flash("NAVIDROME_MUSIC_ROOT is not a directory.", "error")
         except sqlite3.OperationalError as exc:
@@ -1018,10 +992,6 @@ def tools_page() -> str:
             identify_audio_available=identify_audio_available,
             identify_audio_last_run=identify_audio_last_run,
             music_root=music_root,
-            report_counts=report_counts,
-            report_items=report_items,
-            report_filter=report_filter,
-            report_filters=report_filters,
         )
     )
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
