@@ -64,6 +64,7 @@ def refresh_catalog(
         root,
         progress_callback=lambda line: _emit(line, lines),
         limit=limit,
+        scan_xml_sidecars=False,
     )
     counts = get_library_report_counts(library_index_db, root)
 
