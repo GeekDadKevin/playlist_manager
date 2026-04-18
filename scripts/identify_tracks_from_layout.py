@@ -27,9 +27,8 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 from app.services.library_index import (  # noqa: E402
-    list_structure_tag_candidates,
+    list_structure_tag_candidates,  # Only queries the DB, never scans filesystem
     record_library_tool_run,
-    refresh_library_index,
     refresh_library_index_for_paths,
 )
 from app.services.musicbrainz_tag_writer import write_musicbrainz_tags  # noqa: E402
