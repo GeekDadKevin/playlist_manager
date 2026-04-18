@@ -770,17 +770,27 @@ class DeezerDownloadService:
             deezer_id=deezer_id,
             fmt=fmt,
         )
-        if output_path.suffix.lower() == ".flac":
-            try:
-                self._write_flac_tags(
-                    output_path,
-                    match,
-                    track,
-                    deezer_id=deezer_id,
-                    fmt=fmt,
-                )
-            except Exception as exc:
-                log.warning("Could not write FLAC tags for %s: %s", output_path, exc)
+
+        # Enforce strict tag completeness and safety after download
+        tag_ok, tag_errors = self._validate_tag_completeness(output_path, match, track)
+        if not tag_ok:
+            log.error("Tag completeness validation failed for %s: %s", output_path, tag_errors)
+            # Optionally, remove or quarantine the file here
+            raise RuntimeError(f"Downloaded file failed tag completeness: {tag_errors}")
+    def _validate_tag_completeness(self, audio_path: Path, match: dict[str, Any], track: PlaylistTrack) -> tuple[bool, list[str]]:
+        """Check that all required tags (MusicBrainz, Deezer, core fields) are present and file is safe."""
+        from app.services.song_metadata import load_embedded_audio_metadata
+        tags = load_embedded_audio_metadata(audio_path)
+        errors = []
+        required = ["title", "artist", "album", "track_number", "musicbrainz_track_id", "deezer_id"]
+        for key in required:
+            value = str(tags.get(key, "")).strip()
+            if not value or value.lower() in {"", "unknown", "0"}:
+                errors.append(f"Missing or invalid tag: {key}")
+        # Optionally, check for corruption or unsafe file here
+        if audio_path.stat().st_size < 1024 * 100:
+            errors.append("File size too small, possible corruption")
+        return (len(errors) == 0, errors)
 
         try:
             ensure_cover_art(
