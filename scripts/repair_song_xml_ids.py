@@ -1,5 +1,7 @@
 """Repair missing MBID and Deezer IDs in existing song XML sidecars.
 
+NOTE: This tool uses only the library database for all audio file and XML sidecar lists. Run the catalog refresh tool first to update the DB.
+
 Scans existing XML sidecars, looks for paired audio files, and backfills
 recoverable identifier fields from embedded tags. This tool is useful after
 you improve tagging logic or rebuild parts of the library and want a focused
@@ -69,7 +71,6 @@ def repair_xml_ids(
     _emit("=" * 72, lines)
 
     if selected_audio_paths is not None:
-        inventory_summary = None
         chosen_paths = (
             selected_audio_paths[:limit] if limit is not None else list(selected_audio_paths)
         )
@@ -84,25 +85,13 @@ def repair_xml_ids(
             lines,
         )
     else:
-        inventory_summary = refresh_library_index(
-            library_index_db,
-            root,
-            progress_callback=lambda line: _emit(line, lines),
-            limit=limit,
-        )
         candidates = list_xml_id_repair_candidates(
             library_index_db,
             root,
             force_full=full_scan,
             limit=limit,
         )
-        _emit(
-            "  Indexed "
-            f"{inventory_summary['scanned']} audio file(s) and "
-            f"{inventory_summary['xml_scanned']} XML file(s).",
-            lines,
-        )
-        _emit(f"  Found {len(candidates)} XML sidecar(s) to inspect for ID repair.", lines)
+        _emit(f"  Found {len(candidates)} XML sidecar(s) to inspect for ID repair (from DB).", lines)
 
     summary = repair_song_metadata_xml_ids(
         root,

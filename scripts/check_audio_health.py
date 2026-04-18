@@ -1,5 +1,7 @@
 """Check audio files for likely corruption.
 
+NOTE: This tool uses only the library database for all audio file lists and health checks. Run the catalog refresh tool first to update the DB.
+
 Runs a read-only validation pass across the music root. When ffmpeg is
 available, each file is fully decoded to `/dev/null`/`NUL` so truncated frames
 and container errors are caught. Without ffmpeg, the script falls back to a
@@ -85,58 +87,22 @@ def check_library(
         _emit("  Validation mode: mutagen parser only (ffmpeg not found)", lines)
         _emit("  WARN: parser-only mode can miss corruption that ffmpeg decode would catch.", lines)
 
-    inventory_summary = None
     if selected_paths is not None:
         audio_files = selected_paths[:limit] if limit is not None else list(selected_paths)
         total_found = len(audio_files)
         _emit(f"  Using explicit selection of {total_found} audio file(s).", lines)
     else:
-        _emit(f"  Refreshing library catalog: {library_index_db}", lines)
-        try:
-            inventory_summary = refresh_library_index(
-                library_index_db,
-                root,
-                progress_callback=lambda line: _emit(line, lines),
-                limit=limit,
-                scan_xml_sidecars=False,
-            )
-        except Exception as exc:
-            _emit(
-                "WARN: Library catalog refresh failed; falling back to direct filesystem scan: "
-                f"{exc}",
-                lines,
-            )
-            audio_files = iter_audio_files(root)
-            total_found = len(audio_files)
-            if limit is not None:
-                audio_files = audio_files[:limit]
-            _emit(
-                "  Falling back to direct scan over "
-                f"{total_found} audio file(s); scanning {len(audio_files)} file(s).",
-                lines,
-            )
-        else:
-            total_found = count_indexed_audio_files(library_index_db, root)
-            audio_files = list_audio_health_candidates(
-                library_index_db,
-                root,
-                force_full=full_scan,
-                limit=limit,
-            )
-
-            _emit(
-                "  Indexed "
-                f"{inventory_summary['scanned']} audio file(s) "
-                "(changed="
-                f"{inventory_summary['changed']}, unchanged={inventory_summary['unchanged']}).",
-                lines,
-            )
-            _emit(
-                "  Found "
-                f"{total_found} indexed audio file(s); "
-                f"scanning {len(audio_files)} candidate file(s).",
-                lines,
-            )
+        total_found = count_indexed_audio_files(library_index_db, root)
+        audio_files = list_audio_health_candidates(
+            library_index_db,
+            root,
+            force_full=full_scan,
+            limit=limit,
+        )
+        _emit(
+            f"  Found {total_found} indexed audio file(s); scanning {len(audio_files)} candidate file(s) (from DB).",
+            lines,
+        )
 
     ok_count = 0
     warning_count = 0

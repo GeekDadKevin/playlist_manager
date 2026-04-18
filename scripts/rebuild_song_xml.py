@@ -1,11 +1,13 @@
 """Rebuild song XML sidecars to match the current state of the music library.
 
+NOTE: This tool uses only the library database for all file lists and XML operations. Run the catalog refresh tool first to update the DB.
+
 Steps:
-  1. Delete every .xml sidecar whose audio file no longer exists (renamed/moved).
-  2. Create a new .xml sidecar for every audio file that is missing one.
+    1. Delete every .xml sidecar whose audio file is no longer present in the library database.
+    2. Create a new .xml sidecar for every audio file in the database that is missing one.
 
 Run:
-    uv run python scripts/rebuild_song_xml.py [MUSIC_ROOT] [--dry-run]
+        uv run python scripts/rebuild_song_xml.py [MUSIC_ROOT] [--dry-run]
 
 MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/rebuild_song_xml_<timestamp>.log
@@ -226,29 +228,8 @@ def rebuild(
     )
     _emit("=" * 72, lines)
 
-    if selected_audio_paths is not None:
-        inventory_summary = None
-        selected_audio_paths = (
-            selected_audio_paths[:limit] if limit is not None else list(selected_audio_paths)
-        )
-        _emit(
-            f"  Using explicit selection of {len(selected_audio_paths)} audio file(s) "
-            "for XML rebuild.",
-            lines,
-        )
-    else:
-        inventory_summary = refresh_library_index(
-            library_index_db,
-            root,
-            progress_callback=lambda line: _emit(line, lines),
-            limit=limit,
-        )
-        _emit(
-            "  Indexed "
-            f"{inventory_summary['scanned']} audio file(s) and "
-            f"{inventory_summary['xml_scanned']} XML file(s).",
-            lines,
-        )
+    # No inventory scan: rely on DB only. User must refresh catalog first.
+    inventory_summary = None
 
     deleted = 0
     created = 0
@@ -264,17 +245,14 @@ def rebuild(
     _emit("", lines)
     _emit("--- Pass 1: scanning for orphaned XML sidecars ---", lines)
 
-    all_xml = [] if selected_audio_paths is not None else list_orphaned_xml_paths(
+    all_xml = list_orphaned_xml_paths(
         library_index_db,
         root,
-        limit=limit if dry_run and not full_scan else None,
+        limit=limit if dry_run else None,
     )
     total_xml = len(all_xml)
-    _emit(f"  Found {total_xml} orphaned XML file(s) to check", lines)
-
+    _emit(f"  Found {total_xml} orphaned XML file(s) to check (from DB)", lines)
     for xml_path in all_xml:
-        if not xml_path.is_file():
-            continue
         scanned_xml += 1
         _emit(f"CHECK ORPHAN XML: {scanned_xml}/{total_xml}  {xml_path.relative_to(root)}", lines)
         if scanned_xml % 100 == 0:
@@ -283,7 +261,6 @@ def rebuild(
                 f"({deleted} orphaned so far)",
                 lines,
             )
-
         if dry_run and limit is not None and deleted >= limit:
             _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
             break
@@ -310,22 +287,13 @@ def rebuild(
     _emit("", lines)
     _emit("--- Pass 2: scanning for audio files missing XML sidecars ---", lines)
 
-    all_audio = (
-        [
-            audio_path
-            for audio_path in selected_audio_paths
-            if not audio_path.with_suffix(".xml").exists()
-        ]
-        if selected_audio_paths is not None
-        else list_missing_xml_audio_paths(
-            library_index_db,
-            root,
-            limit=limit if dry_run and not full_scan else None,
-        )
+    all_audio = list_missing_xml_audio_paths(
+        library_index_db,
+        root,
+        limit=limit if dry_run else None,
     )
     total_audio = len(all_audio)
-    _emit(f"  Found {total_audio} audio file(s) missing XML sidecars", lines)
-
+    _emit(f"  Found {total_audio} audio file(s) missing XML sidecars (from DB)", lines)
     for audio_path in all_audio:
         scanned_audio += 1
         _emit(
@@ -338,17 +306,13 @@ def rebuild(
                 f"({created} missing XMLs so far)",
                 lines,
             )
-
         xml_path = audio_path.with_suffix(".xml")
-
         if dry_run and limit is not None and created >= limit:
             _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
             break
-
         _emit(f"  Reading tags: {audio_path.name}", lines)
         tags = _read_tags(audio_path, root)
         action = "[DRY-RUN] would create" if dry_run else "CREATED"
-
         if not dry_run:
             try:
                 write_song_metadata_xml(
@@ -369,7 +333,6 @@ def rebuild(
                 _emit(f"  ERROR creating {xml_path}: {exc}", lines)
                 failed += 1
                 continue
-
         _emit(
             f"  {action}: {xml_path.name}"
             f"  [title={tags['title']!r}  performingartist={tags['performing_artist']!r}"

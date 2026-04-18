@@ -16,3 +16,10 @@
 - You may start the app or related local services for testing, but **do not leave them running after testing is complete**.
 - Before finishing a task, stop any server process you launched, clean up any stale `.app.lock` file if needed, and avoid leaving port `3000` occupied by the repo app.
 - Use fresh verification evidence from commands like `uv run python -m pytest`, `uv run python -m ruff check .`, or a live HTTP check before claiming completion.
+
+# Maintenance Tool DB-Only Policy & Risks
+
+- All maintenance tools (catalog, tag, XML, health, repair, etc.) **must** use the library database for all file and sidecar lists. No direct filesystem scans are allowed.
+- The user is responsible for running the catalog refresh tool before any maintenance tool; tools operate only on the DB state.
+- When adding or updating any maintenance tool, the agent must verify that it uses only the DB for file/sidecar discovery and does not scan the filesystem directly.
+- If a new tool is added, or an existing tool is modified, always check for DB-only compliance and update this policy if needed.

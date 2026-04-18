@@ -1,25 +1,27 @@
 """Fix embedded tags using folder layout plus MusicBrainz enrichment.
 
+NOTE: This tool uses only the library database for all audio file lists and tag operations. Run the catalog refresh tool first to update the DB.
+
 Pass 1 aligns artist and albumartist tags with the directory layout:
 
-    {MUSIC_ROOT}/{artist}/{album}/{artist} - {album} - {track#} - {title}.flac
+        {MUSIC_ROOT}/{artist}/{album}/{artist} - {album} - {track#} - {title}.flac
 
 Pass 2 enriches missing track numbers and MusicBrainz IDs from
 ListenBrainz/MusicBrainz, retrying with directory-derived artist fallbacks when
 the embedded artist looks wrong.
 
 Folder pass — Normal albums:
-  The first directory under MUSIC_ROOT is treated as the authoritative artist.
-  Both ``artist`` and ``albumartist`` tags are set to that folder name.
+    The first directory under MUSIC_ROOT is treated as the authoritative artist.
+    Both ``artist`` and ``albumartist`` tags are set to that folder name.
 
 Folder pass — Various-artist albums:
-  When the artist folder is a known VA placeholder (\"Various Artists\", etc.)
-  the per-track artist is parsed from the filename stem using the convention
-  ``{artist} - {album} - {track#} - {title}`` (first \" - \" segment).
-  Only the ``artist`` tag is updated; ``albumartist`` is left as the folder name.
+    When the artist folder is a known VA placeholder ("Various Artists", etc.)
+    the per-track artist is parsed from the filename stem using the convention
+    ``{artist} - {album} - {track#} - {title}`` (first " - " segment).
+    Only the ``artist`` tag is updated; ``albumartist`` is left as the folder name.
 
 Run:
-    uv run python scripts/fix_audio_tags.py [MUSIC_ROOT] [--dry-run] [--limit N]
+        uv run python scripts/fix_audio_tags.py [MUSIC_ROOT] [--dry-run] [--limit N]
 
 MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/fix_audio_tags_<timestamp>.log
@@ -206,20 +208,12 @@ def fix_tags(
 
     total_fixed = 0
     if selected_paths is not None:
-        inventory_summary = None
         all_audio = selected_paths[:limit] if limit is not None else list(selected_paths)
         _emit(
             f"  Using explicit selection of {len(all_audio)} audio file(s) for tag review.",
             lines,
         )
     else:
-        inventory_summary = refresh_library_index(
-            library_index_db,
-            root,
-            progress_callback=lambda line: _emit(line, lines),
-            limit=limit,
-            scan_xml_sidecars=False,
-        )
         all_audio = list_tag_fix_candidates(
             library_index_db,
             root,
@@ -227,14 +221,12 @@ def fix_tags(
             limit=limit if full_scan else None,
         )
         _emit(
-            "  Indexed "
-            f"{inventory_summary['scanned']} audio file(s); "
-            f"selected {len(all_audio)} candidate file(s) for tag review.",
+            f"  Selected {len(all_audio)} candidate file(s) for tag review (from DB).",
             lines,
         )
 
     total = len(all_audio)
-    _emit(f"  Found {total} candidate audio file(s) to check", lines)
+    _emit(f"  Found {total} candidate audio file(s) to check (from DB)", lines)
 
     # Partition files into normal vs various-artist folders.
     normal: list[Path] = []
