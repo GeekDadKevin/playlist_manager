@@ -10,62 +10,6 @@
     Each tool streams live output as it runs.
     Use <strong>Dry Run</strong> to preview changes without writing anything.
   </p>
-      <span class="tool-summary-key">MB Stale</span>
-      <span class="tool-summary-value">{{ report_counts.musicbrainz_stale }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Accepted As Is</span>
-      <span class="tool-summary-value">{{ report_counts.accepted_as_is }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Missing XML</span>
-      <span class="tool-summary-value">{{ report_counts.missing_xml }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Incomplete XML</span>
-      <span class="tool-summary-value">{{ report_counts.incomplete_xml }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Corrupted Audio</span>
-      <span class="tool-summary-value">{{ report_counts.corrupted_audio }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Non-Deezer Source</span>
-      <span class="tool-summary-value">{{ report_counts.non_deezer_source }}</span>
-    </div>
-    <div class="tool-summary-item">
-      <span class="tool-summary-key">Orphaned XML</span>
-      <span class="tool-summary-value">{{ report_counts.orphaned_xml }}</span>
-    </div>
-  </div>
-
-  <div class="report-filter-row">
-    {% for filter_id, filter_label in report_filters %}
-    <a
-      class="report-filter-pill{% if report_filter == filter_id %} active{% endif %}"
-      href="{{ url_for('web.tools_page', report_filter=filter_id) }}"
-    >{{ filter_label }}</a>
-    {% endfor %}
-  </div>
-
-  <div class="tool-log-shell report-shell">
-    {% if report_items %}
-    <ul class="report-list">
-      {% for item in report_items %}
-      <li class="report-item">
-        <span class="report-item-path">{{ item.path }}</span>
-        <span class="report-item-detail">{{ item.detail }}</span>
-        <span class="report-item-badge">{{ item.badge }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <div class="tool-desc">No indexed items match this filter.</div>
-    {% endif %}
-  </div>
-  {% elif music_root %}
-  <p class="tool-desc">No catalog report is available yet. Refresh the catalog to build it.</p>
-  {% endif %}
 </section>
 
 <div class="tools-grid">
