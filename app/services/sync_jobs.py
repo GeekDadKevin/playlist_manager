@@ -147,7 +147,12 @@ def resolve_low_confidence_candidate(
     track = _track_from_item(item, title=title, artist=artist, album=album)
     candidates = list(item.get("candidates", [])) if isinstance(item, dict) else []
     if not candidates:
-        candidates = service.search_track(track, limit=8, include_soundcloud=True, include_youtube=True)
+        candidates = service.search_track(
+            track,
+            limit=8,
+            include_soundcloud=True,
+            include_youtube=True,
+        )
     match = next(
         (
             candidate

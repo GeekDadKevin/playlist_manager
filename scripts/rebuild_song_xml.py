@@ -27,11 +27,20 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
-from app.services.song_metadata import (
-    AUDIO_EXTENSIONS,
+from app.services.library_index import (  # noqa: E402
+    list_incomplete_xml_pairs,
+    list_missing_xml_audio_paths,
+    list_orphaned_xml_paths,
+    record_library_tool_run,
+    refresh_library_index,
+    refresh_library_index_for_paths,
+)
+from app.services.song_metadata import (  # noqa: E402
     guess_track_metadata,
+    load_embedded_audio_metadata,
     write_song_metadata_xml,
 )
+from app.services.tool_output import emit_console_line  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Optional: try to read real embedded tags via mutagen before falling back
@@ -69,14 +78,22 @@ def _read_tags(audio_path: Path, root: Path) -> dict[str, str]:
     """
     fallback = guess_track_metadata(audio_path)
     dir_artist = _artist_dir_for(audio_path, root)
+    embedded = load_embedded_audio_metadata(audio_path)
 
     if not _HAS_MUTAGEN:
         return {
-            "title": fallback["title"],
-            "artist": "",
-            "albumartist": "",
-            "album": fallback["album"],
-            "performing_artist": dir_artist,
+            "title": embedded.get("title") or fallback["title"],
+            "artist": embedded.get("artist") or "",
+            "albumartist": embedded.get("albumartist") or "",
+            "album": embedded.get("album") or fallback["album"],
+            "performing_artist": (
+                embedded.get("artist") or embedded.get("albumartist") or dir_artist
+            ),
+            "musicbrainz_track_id": embedded.get("musicbrainz_track_id", ""),
+            "deezer_id": embedded.get("deezer_id", ""),
+            "deezer_artist_id": embedded.get("deezer_artist_id", ""),
+            "deezer_album_id": embedded.get("deezer_album_id", ""),
+            "deezer_link": embedded.get("deezer_link", ""),
         }
 
     try:
@@ -86,11 +103,18 @@ def _read_tags(audio_path: Path, root: Path) -> dict[str, str]:
 
     if mf is None:
         return {
-            "title": fallback["title"],
-            "artist": "",
-            "albumartist": "",
-            "album": fallback["album"],
-            "performing_artist": dir_artist,
+            "title": embedded.get("title") or fallback["title"],
+            "artist": embedded.get("artist") or "",
+            "albumartist": embedded.get("albumartist") or "",
+            "album": embedded.get("album") or fallback["album"],
+            "performing_artist": (
+                embedded.get("artist") or embedded.get("albumartist") or dir_artist
+            ),
+            "musicbrainz_track_id": embedded.get("musicbrainz_track_id", ""),
+            "deezer_id": embedded.get("deezer_id", ""),
+            "deezer_artist_id": embedded.get("deezer_artist_id", ""),
+            "deezer_album_id": embedded.get("deezer_album_id", ""),
+            "deezer_link": embedded.get("deezer_link", ""),
         }
 
     def _first(key: str) -> str:
@@ -99,10 +123,10 @@ def _read_tags(audio_path: Path, root: Path) -> dict[str, str]:
             return str(val[0]).strip()
         return ""
 
-    title = _first("title") or fallback["title"]
-    artist = _first("artist")
-    albumartist = _first("albumartist")
-    album = _first("album") or fallback["album"]
+    title = _first("title") or embedded.get("title") or fallback["title"]
+    artist = _first("artist") or embedded.get("artist", "")
+    albumartist = _first("albumartist") or embedded.get("albumartist", "")
+    album = _first("album") or embedded.get("album") or fallback["album"]
     # Prefer embedded artist tag; fall back to albumartist; last resort: artist dir.
     performing_artist = artist or albumartist or dir_artist
     return {
@@ -111,11 +135,16 @@ def _read_tags(audio_path: Path, root: Path) -> dict[str, str]:
         "albumartist": albumartist,
         "album": album,
         "performing_artist": performing_artist,
+        "musicbrainz_track_id": embedded.get("musicbrainz_track_id", ""),
+        "deezer_id": embedded.get("deezer_id", ""),
+        "deezer_artist_id": embedded.get("deezer_artist_id", ""),
+        "deezer_album_id": embedded.get("deezer_album_id", ""),
+        "deezer_link": embedded.get("deezer_link", ""),
     }
 
 
-def _update_artist_fields(xml_path: Path, tags: dict[str, str], *, dry_run: bool) -> bool:
-    """Patch <performingartist> and <albumartist> in an existing XML sidecar.
+def _update_xml_fields(xml_path: Path, tags: dict[str, str], *, dry_run: bool) -> bool:
+    """Patch recovered metadata fields in an existing XML sidecar.
 
     Returns True if any change was made.
     """
@@ -141,8 +170,18 @@ def _update_artist_fields(xml_path: Path, tags: dict[str, str], *, dry_run: bool
             elem.text = new_value
         return True
 
-    changed = _set_field("performingartist", tags["performing_artist"]) or changed
-    changed = _set_field("albumartist", tags["albumartist"] or tags["performing_artist"]) or changed
+    fields = {
+        "performingartist": tags["performing_artist"],
+        "albumartist": tags["albumartist"] or tags["performing_artist"],
+        "musicbrainztrackid": tags.get("musicbrainz_track_id", ""),
+        "deezerid": tags.get("deezer_id", ""),
+        "deezerartistid": tags.get("deezer_artist_id", ""),
+        "deezeralbumid": tags.get("deezer_album_id", ""),
+        "deezerlink": tags.get("deezer_link", ""),
+    }
+
+    for field_name, field_value in fields.items():
+        changed = _set_field(field_name, field_value) or changed
 
     if changed and not dry_run:
         ET.indent(tree, space="  ")
@@ -156,16 +195,60 @@ def _update_artist_fields(xml_path: Path, tags: dict[str, str], *, dry_run: bool
 
 def _emit(line: str, lines: list[str]) -> None:
     """Print a line immediately and append it to the log buffer."""
-    print(line, flush=True)
+    emit_console_line(line)
     lines.append(line)
 
 
-def rebuild(root: Path, *, dry_run: bool = False, limit: int | None = None) -> list[str]:
+def rebuild(
+    root: Path,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+    full_scan: bool = False,
+    db_path: str | Path | None = None,
+    selected_audio_paths: list[Path] | None = None,
+) -> list[str]:
     """Stream progress to stdout and return all log lines for the log file."""
     lines: list[str] = []
+    started_at = datetime.datetime.now(datetime.UTC).isoformat()
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    _emit(f"rebuild_song_xml  root={root}  dry_run={dry_run}  started={ts}", lines)
+    library_index_db = str(
+        db_path
+        or os.getenv(
+            "LIBRARY_INDEX_DB_PATH",
+            Path(__file__).resolve().parent.parent / "data" / "library_index.db",
+        )
+    )
+    _emit(
+        "rebuild_song_xml  "
+        f"root={root}  dry_run={dry_run}  full_scan={full_scan}  started={ts}",
+        lines,
+    )
     _emit("=" * 72, lines)
+
+    if selected_audio_paths is not None:
+        inventory_summary = None
+        selected_audio_paths = (
+            selected_audio_paths[:limit] if limit is not None else list(selected_audio_paths)
+        )
+        _emit(
+            f"  Using explicit selection of {len(selected_audio_paths)} audio file(s) "
+            "for XML rebuild.",
+            lines,
+        )
+    else:
+        inventory_summary = refresh_library_index(
+            library_index_db,
+            root,
+            progress_callback=lambda line: _emit(line, lines),
+            limit=limit,
+        )
+        _emit(
+            "  Indexed "
+            f"{inventory_summary['scanned']} audio file(s) and "
+            f"{inventory_summary['xml_scanned']} XML file(s).",
+            lines,
+        )
 
     deleted = 0
     created = 0
@@ -181,37 +264,45 @@ def rebuild(root: Path, *, dry_run: bool = False, limit: int | None = None) -> l
     _emit("", lines)
     _emit("--- Pass 1: scanning for orphaned XML sidecars ---", lines)
 
-    all_xml = sorted(root.rglob("*.xml"))
+    all_xml = [] if selected_audio_paths is not None else list_orphaned_xml_paths(
+        library_index_db,
+        root,
+        limit=limit if dry_run and not full_scan else None,
+    )
     total_xml = len(all_xml)
-    _emit(f"  Found {total_xml} XML file(s) to check", lines)
+    _emit(f"  Found {total_xml} orphaned XML file(s) to check", lines)
 
     for xml_path in all_xml:
         if not xml_path.is_file():
             continue
         scanned_xml += 1
+        _emit(f"CHECK ORPHAN XML: {scanned_xml}/{total_xml}  {xml_path.relative_to(root)}", lines)
         if scanned_xml % 100 == 0:
-            _emit(f"  ... scanned {scanned_xml}/{total_xml} XML files ({deleted} orphaned so far)", lines)
+            _emit(
+                f"  ... scanned {scanned_xml}/{total_xml} XML files "
+                f"({deleted} orphaned so far)",
+                lines,
+            )
 
-        has_audio = any(
-            xml_path.with_suffix(ext).exists()
-            for ext in AUDIO_EXTENSIONS
-        )
-        if not has_audio:
-            if dry_run and limit is not None and deleted >= limit:
-                _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
-                break
-            action = "[DRY-RUN] would delete" if dry_run else "DELETED"
-            if not dry_run:
-                try:
-                    xml_path.unlink()
-                except OSError as exc:
-                    _emit(f"  ERROR deleting {xml_path}: {exc}", lines)
-                    failed += 1
-                    continue
-            _emit(f"  {action}: {xml_path}", lines)
-            deleted += 1
+        if dry_run and limit is not None and deleted >= limit:
+            _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
+            break
+        action = "[DRY-RUN] would delete" if dry_run else "DELETED"
+        if not dry_run:
+            try:
+                xml_path.unlink()
+            except OSError as exc:
+                _emit(f"  ERROR deleting {xml_path}: {exc}", lines)
+                failed += 1
+                continue
+        _emit(f"  {action}: {xml_path}", lines)
+        deleted += 1
 
-    _emit(f"  => Pass 1 done. Scanned {scanned_xml} XML(s), orphaned {'would be ' if dry_run else ''}removed: {deleted}", lines)
+    _emit(
+        f"  => Pass 1 done. Scanned {scanned_xml} XML(s), orphaned "
+        f"{'would be ' if dry_run else ''}removed: {deleted}",
+        lines,
+    )
 
     # ------------------------------------------------------------------
     # Pass 2: create missing XML sidecars for every audio file.
@@ -219,21 +310,36 @@ def rebuild(root: Path, *, dry_run: bool = False, limit: int | None = None) -> l
     _emit("", lines)
     _emit("--- Pass 2: scanning for audio files missing XML sidecars ---", lines)
 
-    all_audio = sorted(
-        p for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
+    all_audio = (
+        [
+            audio_path
+            for audio_path in selected_audio_paths
+            if not audio_path.with_suffix(".xml").exists()
+        ]
+        if selected_audio_paths is not None
+        else list_missing_xml_audio_paths(
+            library_index_db,
+            root,
+            limit=limit if dry_run and not full_scan else None,
+        )
     )
     total_audio = len(all_audio)
-    _emit(f"  Found {total_audio} audio file(s) to check", lines)
+    _emit(f"  Found {total_audio} audio file(s) missing XML sidecars", lines)
 
     for audio_path in all_audio:
         scanned_audio += 1
+        _emit(
+            f"CHECK MISSING XML: {scanned_audio}/{total_audio}  {audio_path.relative_to(root)}",
+            lines,
+        )
         if scanned_audio % 100 == 0:
-            _emit(f"  ... scanned {scanned_audio}/{total_audio} audio files ({created} missing XMLs so far)", lines)
+            _emit(
+                f"  ... scanned {scanned_audio}/{total_audio} audio files "
+                f"({created} missing XMLs so far)",
+                lines,
+            )
 
         xml_path = audio_path.with_suffix(".xml")
-        if xml_path.exists():
-            continue  # already present, leave it alone
 
         if dry_run and limit is not None and created >= limit:
             _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
@@ -250,7 +356,13 @@ def rebuild(root: Path, *, dry_run: bool = False, limit: int | None = None) -> l
                     title=tags["title"],
                     artist=tags["performing_artist"],
                     album=tags["album"],
+                    deezer_id=tags.get("deezer_id", ""),
+                    deezer_artist_id=tags.get("deezer_artist_id", ""),
+                    deezer_album_id=tags.get("deezer_album_id", ""),
+                    deezer_link=tags.get("deezer_link", ""),
                     source=str(audio_path),
+                    downloaded_from="library",
+                    musicbrainz_track_id=tags.get("musicbrainz_track_id", ""),
                     overwrite=True,
                 )
             except Exception as exc:
@@ -260,56 +372,86 @@ def rebuild(root: Path, *, dry_run: bool = False, limit: int | None = None) -> l
 
         _emit(
             f"  {action}: {xml_path.name}"
-            f"  [title={tags['title']!r}  performingartist={tags['performing_artist']!r}  album={tags['album']!r}]",
+            f"  [title={tags['title']!r}  performingartist={tags['performing_artist']!r}"
+            f"  album={tags['album']!r}]",
             lines,
         )
         created += 1
 
-    _emit(f"  => Pass 2 done. Scanned {scanned_audio} audio file(s), XMLs {'would be ' if dry_run else ''}created: {created}", lines)
+    _emit(
+        f"  => Pass 2 done. Scanned {scanned_audio} audio file(s), XMLs "
+        f"{'would be ' if dry_run else ''}created: {created}",
+        lines,
+    )
 
     # ------------------------------------------------------------------
-    # Pass 3: fix <performingartist> in every existing XML sidecar.
+    # Pass 3: fix recovered metadata in every existing XML sidecar.
     # Re-reads embedded tags from the paired audio file and updates the
-    # XML when the stored value does not match (prefer artist, fall back
-    # to albumartist).
+    # XML when the stored value does not match.
     # ------------------------------------------------------------------
     _emit("", lines)
-    _emit("--- Pass 3: fixing performingartist in existing XML sidecars ---", lines)
+    _emit("--- Pass 3: fixing recovered metadata in existing XML sidecars ---", lines)
 
     fixed = 0
     scanned_fix = 0
     # Re-scan so we also catch XMLs that already existed before Pass 2.
-    all_xml_fix = sorted(root.rglob("*.xml"))
-    total_xml_fix = len(all_xml_fix)
-    _emit(f"  Found {total_xml_fix} XML file(s) to check", lines)
-
-    for xml_path in all_xml_fix:
-        if not xml_path.is_file():
-            continue
-        # Find the paired audio file.
-        audio_path = next(
-            (xml_path.with_suffix(ext) for ext in AUDIO_EXTENSIONS if xml_path.with_suffix(ext).exists()),
-            None,
+    all_xml_fix = (
+        [
+            (audio_path.with_suffix(".xml"), audio_path)
+            for audio_path in selected_audio_paths
+            if audio_path.with_suffix(".xml").exists()
+        ]
+        if selected_audio_paths is not None
+        else list_incomplete_xml_pairs(
+            library_index_db,
+            root,
+            limit=None if full_scan else (limit if dry_run else None),
         )
-        if audio_path is None:
-            continue  # orphan with no audio — Pass 1 handles deletion
+    )
+    if full_scan:
+        all_xml_fix = [
+            (xml_path, audio_path)
+            for xml_path, audio_path in [
+                (path.with_suffix(".xml"), path)
+                for path in list_missing_xml_audio_paths(library_index_db, root, limit=None)
+            ]
+            if xml_path.exists()
+        ] + all_xml_fix
+    total_xml_fix = len(all_xml_fix)
+    _emit(f"  Found {total_xml_fix} XML file(s) needing metadata refresh", lines)
+
+    for xml_path, audio_path in all_xml_fix:
+        if not xml_path.is_file() or not audio_path.is_file():
+            continue
 
         scanned_fix += 1
+        _emit(
+            f"CHECK XML METADATA: {scanned_fix}/{total_xml_fix}  {xml_path.relative_to(root)}",
+            lines,
+        )
         if scanned_fix % 100 == 0:
-            _emit(f"  ... scanned {scanned_fix}/{total_xml_fix} XML files ({fixed} fixed so far)", lines)
+            _emit(
+                f"  ... scanned {scanned_fix}/{total_xml_fix} XML files "
+                f"({fixed} fixed so far)",
+                lines,
+            )
 
         tags = _read_tags(audio_path, root)
-        changed = _update_artist_fields(xml_path, tags, dry_run=dry_run)
+        changed = _update_xml_fields(xml_path, tags, dry_run=dry_run)
         if changed:
             action = "[DRY-RUN] would fix" if dry_run else "FIXED"
             _emit(
                 f"  {action}: {xml_path.name}"
-                f"  performingartist/albumartist => {tags['performing_artist']!r}",
+                f"  recovered metadata refreshed",
                 lines,
             )
             fixed += 1
 
-    _emit(f"  => Pass 3 done. Scanned {scanned_fix} XML(s), {'would be ' if dry_run else ''}fixed: {fixed}", lines)
+    _emit(
+        f"  => Pass 3 done. Scanned {scanned_fix} XML(s), "
+        f"{'would be ' if dry_run else ''}fixed: {fixed}",
+        lines,
+    )
 
     # ------------------------------------------------------------------
     # Summary
@@ -318,8 +460,42 @@ def rebuild(root: Path, *, dry_run: bool = False, limit: int | None = None) -> l
     _emit("=" * 72, lines)
     _emit(
         f"SUMMARY  deleted={deleted}  created={created}  fixed={fixed}  failed={failed}"
-        f"  dry_run={dry_run}",
+        f"  dry_run={dry_run}  full_scan={full_scan}",
         lines,
+    )
+    if not dry_run:
+        if selected_audio_paths is not None:
+            refresh_library_index_for_paths(
+                library_index_db,
+                root,
+                selected_audio_paths,
+            )
+        else:
+            refresh_library_index(
+                library_index_db,
+                root,
+                progress_callback=lambda line: _emit(line, lines),
+                limit=limit,
+            )
+    record_library_tool_run(
+        library_index_db,
+        tool_name="rebuild-xml",
+        root=root,
+        run_mode="full" if full_scan else "incremental",
+        started_at=started_at,
+        completed_at=datetime.datetime.now(datetime.UTC).isoformat(),
+        scanned_count=scanned_xml + scanned_audio + scanned_fix,
+        changed_count=deleted + created + fixed,
+        error_count=failed,
+        result={
+            "inventory": inventory_summary,
+            "deleted": deleted,
+            "created": created,
+            "fixed": fixed,
+            "failed": failed,
+            "dry_run": dry_run,
+            "full_scan": full_scan,
+        },
     )
     return lines
 
@@ -346,7 +522,15 @@ def main() -> int:
         type=int,
         default=5,
         metavar="N",
-        help="Max items to preview per pass in --dry-run mode (default: 5). Ignored when not dry-running.",
+        help=(
+            "Max items to preview per pass in --dry-run mode (default: 5). "
+            "Ignored when not dry-running."
+        ),
+    )
+    parser.add_argument(
+        "--full-scan",
+        action="store_true",
+        help="Ignore incremental worklists and process the full catalog when supported.",
     )
     args = parser.parse_args()
 
@@ -363,7 +547,12 @@ def main() -> int:
         print(f"ERROR: {root} is not a directory.", file=sys.stderr)
         return 1
 
-    log_lines = rebuild(root, dry_run=args.dry_run, limit=args.limit if args.dry_run else None)
+    log_lines = rebuild(
+        root,
+        dry_run=args.dry_run,
+        limit=args.limit if args.dry_run else None,
+        full_scan=args.full_scan,
+    )
 
     # Write log file.
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

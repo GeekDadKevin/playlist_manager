@@ -32,10 +32,19 @@ from app.services.audio_health import (  # noqa: E402
     find_ffmpeg_executable,
     iter_audio_files,
 )
+from app.services.library_index import (  # noqa: E402
+    count_indexed_audio_files,
+    list_audio_health_candidates,
+    record_audio_health_result,
+    record_library_tool_run,
+    refresh_library_index,
+    refresh_library_index_for_paths,
+)
+from app.services.tool_output import emit_console_line  # noqa: E402
 
 
 def _emit(line: str, lines: list[str]) -> None:
-    print(line, flush=True)
+    emit_console_line(line)
     lines.append(line)
 
 
@@ -44,13 +53,26 @@ def check_library(
     *,
     dry_run: bool = False,
     limit: int | None = None,
+    full_scan: bool = False,
+    db_path: str | Path | None = None,
+    selected_paths: list[Path] | None = None,
 ) -> tuple[list[str], int]:
     lines: list[str] = []
+    started_at = datetime.datetime.now(datetime.UTC).isoformat()
     started = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ffmpeg_path = find_ffmpeg_executable()
+    library_index_db = str(
+        db_path
+        or os.getenv(
+            "LIBRARY_INDEX_DB_PATH",
+            Path(__file__).resolve().parent.parent / "data" / "library_index.db",
+        )
+    )
 
     _emit(
-        f"check_audio_health  root={root}  dry_run={dry_run}  limit={limit}  started={started}",
+        "check_audio_health  "
+        f"root={root}  dry_run={dry_run}  limit={limit}  "
+        f"full_scan={full_scan}  started={started}",
         lines,
     )
     _emit("=" * 72, lines)
@@ -63,18 +85,66 @@ def check_library(
         _emit("  Validation mode: mutagen parser only (ffmpeg not found)", lines)
         _emit("  WARN: parser-only mode can miss corruption that ffmpeg decode would catch.", lines)
 
-    audio_files = iter_audio_files(root)
-    total_found = len(audio_files)
-    if limit is not None:
-        audio_files = audio_files[:limit]
+    inventory_summary = None
+    if selected_paths is not None:
+        audio_files = selected_paths[:limit] if limit is not None else list(selected_paths)
+        total_found = len(audio_files)
+        _emit(f"  Using explicit selection of {total_found} audio file(s).", lines)
+    else:
+        _emit(f"  Refreshing library catalog: {library_index_db}", lines)
+        try:
+            inventory_summary = refresh_library_index(
+                library_index_db,
+                root,
+                progress_callback=lambda line: _emit(line, lines),
+                limit=limit,
+                scan_xml_sidecars=False,
+            )
+        except Exception as exc:
+            _emit(
+                "WARN: Library catalog refresh failed; falling back to direct filesystem scan: "
+                f"{exc}",
+                lines,
+            )
+            audio_files = iter_audio_files(root)
+            total_found = len(audio_files)
+            if limit is not None:
+                audio_files = audio_files[:limit]
+            _emit(
+                "  Falling back to direct scan over "
+                f"{total_found} audio file(s); scanning {len(audio_files)} file(s).",
+                lines,
+            )
+        else:
+            total_found = count_indexed_audio_files(library_index_db, root)
+            audio_files = list_audio_health_candidates(
+                library_index_db,
+                root,
+                force_full=full_scan,
+                limit=limit,
+            )
 
-    _emit(f"  Found {total_found} audio file(s); scanning {len(audio_files)} file(s).", lines)
+            _emit(
+                "  Indexed "
+                f"{inventory_summary['scanned']} audio file(s) "
+                "(changed="
+                f"{inventory_summary['changed']}, unchanged={inventory_summary['unchanged']}).",
+                lines,
+            )
+            _emit(
+                "  Found "
+                f"{total_found} indexed audio file(s); "
+                f"scanning {len(audio_files)} candidate file(s).",
+                lines,
+            )
 
     ok_count = 0
     warning_count = 0
     error_count = 0
 
     for index, audio_path in enumerate(audio_files, start=1):
+        relative_path = audio_path.relative_to(root)
+        _emit(f"CHECK: {index}/{len(audio_files)}  {relative_path}", lines)
         if index % 100 == 0:
             _emit(
                 f"  ... scanned {index}/{len(audio_files)} files "
@@ -83,10 +153,17 @@ def check_library(
             )
 
         result = check_audio_file(audio_path, ffmpeg_path=ffmpeg_path)
-        relative_path = audio_path.relative_to(root)
+        record_audio_health_result(
+            library_index_db,
+            audio_path,
+            status=result.status,
+            message=result.message,
+            root=root,
+        )
 
         if result.status == "ok":
             ok_count += 1
+            _emit(f"OK: {relative_path}", lines)
             continue
 
         if result.status == "warning":
@@ -104,8 +181,35 @@ def check_library(
     _emit("=" * 72, lines)
     _emit(
         f"SUMMARY  scanned={len(audio_files)}  ok={ok_count}  warnings={warning_count}  "
-        f"errors={error_count}  ffmpeg={'yes' if ffmpeg_path else 'no'}  dry_run={dry_run}",
+        f"errors={error_count}  ffmpeg={'yes' if ffmpeg_path else 'no'}  "
+        f"dry_run={dry_run}  full_scan={full_scan}",
         lines,
+    )
+    if selected_paths is not None and not dry_run:
+        refresh_library_index_for_paths(
+            library_index_db,
+            root,
+            audio_files,
+            scan_xml_sidecars=False,
+        )
+    record_library_tool_run(
+        library_index_db,
+        tool_name="check-audio",
+        root=root,
+        run_mode="full" if full_scan else "incremental",
+        started_at=started_at,
+        completed_at=datetime.datetime.now(datetime.UTC).isoformat(),
+        scanned_count=len(audio_files),
+        changed_count=inventory_summary["changed"] if inventory_summary else 0,
+        error_count=error_count,
+        result={
+            "inventory": inventory_summary,
+            "ok": ok_count,
+            "warnings": warning_count,
+            "errors": error_count,
+            "dry_run": dry_run,
+            "full_scan": full_scan,
+        },
     )
     return lines, 1 if error_count else 0
 
@@ -130,6 +234,11 @@ def main() -> int:
         metavar="N",
         help="Only scan the first N audio files after sorting by path.",
     )
+    parser.add_argument(
+        "--full-scan",
+        action="store_true",
+        help="Revalidate every indexed audio file instead of only changed or unverified files.",
+    )
     args = parser.parse_args()
 
     if not args.root:
@@ -145,7 +254,12 @@ def main() -> int:
         print(f"ERROR: {root} is not a directory.", file=sys.stderr)
         return 1
 
-    log_lines, exit_code = check_library(root, dry_run=args.dry_run, limit=args.limit)
+    log_lines, exit_code = check_library(
+        root,
+        dry_run=args.dry_run,
+        limit=args.limit,
+        full_scan=args.full_scan,
+    )
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_name = f"check_audio_health_{log_ts}.log"

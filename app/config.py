@@ -19,6 +19,11 @@ class Config:
     ).rstrip("/")
     LISTENBRAINZ_USERNAME = os.getenv("LISTENBRAINZ_USERNAME", "")
     LISTENBRAINZ_AUTH_TOKEN = os.getenv("LISTENBRAINZ_AUTH_TOKEN", "")
+    ACOUSTID_API_KEY = os.getenv("ACOUSTID_API_KEY", "")
+    ACOUSTID_LOOKUP_TIMEOUT = float(os.getenv("ACOUSTID_LOOKUP_TIMEOUT", "20"))
+    ACOUSTID_SCORE_THRESHOLD = float(os.getenv("ACOUSTID_SCORE_THRESHOLD", "0.9"))
+    ACOUSTID_FINGERPRINT_LENGTH = int(os.getenv("ACOUSTID_FINGERPRINT_LENGTH", "120"))
+    FPCALC_BIN = os.getenv("FPCALC_BIN", "")
     SYNC_MAX_TRACKS = int(os.getenv("SYNC_MAX_TRACKS", "100"))
     NAVIDROME_BASE_URL = os.getenv("NAVIDROME_BASE_URL", "").rstrip("/")
     NAVIDROME_PLAYLIST_DIR = (
@@ -58,4 +63,8 @@ class Config:
     YOUTUBE_FORCE_IPV4 = os.getenv("YOUTUBE_FORCE_IPV4", "1")
     SETTINGS_FILE = os.getenv("SETTINGS_FILE", str(Path(DATA_DIR) / "settings.json"))
     PLAYLIST_DB_PATH = os.getenv("PLAYLIST_DB_PATH", str(Path(DATA_DIR) / "playlist_history.db"))
+    LIBRARY_INDEX_DB_PATH = os.getenv(
+        "LIBRARY_INDEX_DB_PATH",
+        str(Path(DATA_DIR) / "library_index.db"),
+    )
     DOWNLOAD_THREADS = int(os.getenv("DOWNLOAD_THREADS", "1"))

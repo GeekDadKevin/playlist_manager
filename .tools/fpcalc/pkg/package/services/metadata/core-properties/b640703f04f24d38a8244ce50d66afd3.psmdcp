@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coreProperties xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://schemas.openxmlformats.org/package/2006/metadata/core-properties">
+  <dc:creator>Lukáš Lalinský &amp; AcoustID</dc:creator>
+  <dc:description>fpcalc is a utility for generating fingerprints from audio sources programatically. It can produce JSON output, which should be easy to parse in any language. This is the recommended way to use Chromaprint if all you need is generate fingerprints for AcoustID.</dc:description>
+  <dc:identifier>fpcalc</dc:identifier>
+  <version>1.5.1</version>
+  <keywords>fpcalc chromaprint acoustid oss foss cli audio fingerprint fingerprinting sound music</keywords>
+  <lastModifiedBy>choco, Version=2.0.0.0, Culture=neutral, PublicKeyToken=79d02ea9cad655eb;Microsoft Windows NT 10.0.19045.0;.NET Framework 4.8</lastModifiedBy>
+</coreProperties>

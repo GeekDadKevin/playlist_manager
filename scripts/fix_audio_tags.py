@@ -1,13 +1,18 @@
-"""Fix embedded artist / albumartist tags in audio files so they match the
-directory layout:
+"""Fix embedded tags using folder layout plus MusicBrainz enrichment.
+
+Pass 1 aligns artist and albumartist tags with the directory layout:
 
     {MUSIC_ROOT}/{artist}/{album}/{artist} - {album} - {track#} - {title}.flac
 
-Pass 1 — Normal albums:
+Pass 2 enriches missing track numbers and MusicBrainz IDs from
+ListenBrainz/MusicBrainz, retrying with directory-derived artist fallbacks when
+the embedded artist looks wrong.
+
+Folder pass — Normal albums:
   The first directory under MUSIC_ROOT is treated as the authoritative artist.
   Both ``artist`` and ``albumartist`` tags are set to that folder name.
 
-Pass 2 — Various-artist albums:
+Folder pass — Various-artist albums:
   When the artist folder is a known VA placeholder (\"Various Artists\", etc.)
   the per-track artist is parsed from the filename stem using the convention
   ``{artist} - {album} - {track#} - {title}`` (first \" - \" segment).
@@ -24,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -34,7 +40,13 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
-from app.services.song_metadata import AUDIO_EXTENSIONS
+from app.services.library_index import (  # noqa: E402
+    list_tag_fix_candidates,
+    record_library_tool_run,
+    refresh_library_index,
+    refresh_library_index_for_paths,
+)
+from app.services.tool_output import emit_console_line  # noqa: E402
 
 try:
     from mutagen import File as MutagenFile  # type: ignore
@@ -44,7 +56,7 @@ except ImportError:
 
 
 def _emit(line: str, lines: list[str]) -> None:
-    print(line, flush=True)
+    emit_console_line(line)
     lines.append(line)
 
 
@@ -101,7 +113,67 @@ def _parse_artist_from_stem(stem: str) -> str:
     return candidate
 
 
-def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> list[str]:
+def _load_musicbrainz_enrich_module():
+    module_path = Path(__file__).resolve().parent / "enrich_musicbrainz_tags.py"
+    spec = importlib.util.spec_from_file_location(
+        "fix_audio_tags_enrich_musicbrainz_module",
+        module_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load {module_path.name}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _parse_summary_counts(lines: list[str]) -> dict[str, int]:
+    for line in reversed(lines):
+        if not line.lower().startswith("summary"):
+            continue
+        counts: dict[str, int] = {}
+        for token in line.split()[1:]:
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            try:
+                counts[key] = int(value)
+            except ValueError:
+                continue
+        return counts
+    return {}
+
+
+def _run_musicbrainz_enrichment(
+    root: Path,
+    *,
+    dry_run: bool,
+    limit: int | None,
+    full_scan: bool,
+    db_path: str | Path | None,
+    selected_paths: list[Path] | None = None,
+) -> tuple[list[str], int]:
+    enrich_module = _load_musicbrainz_enrich_module()
+    return enrich_module.enrich_musicbrainz_tags(
+        root,
+        dry_run=dry_run,
+        limit=limit,
+        full_scan=full_scan,
+        db_path=db_path,
+        tool_name="fix-tags",
+        record_run=False,
+        selected_paths=selected_paths,
+    )
+
+
+def fix_tags(
+    root: Path,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+    full_scan: bool = False,
+    db_path: str | Path | None = None,
+    selected_paths: list[Path] | None = None,
+) -> list[str]:
     """Walk *root* and fix artist/albumartist tags.
 
     Pass 1 fixes normal artist folders (both artist + albumartist tags).
@@ -112,8 +184,20 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
     Returns all log lines (also printed to stdout as they are generated).
     """
     lines: list[str] = []
+    started_at = datetime.datetime.now(datetime.UTC).isoformat()
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    _emit(f"fix_audio_tags  root={root}  dry_run={dry_run}  limit={limit}  started={ts}", lines)
+    library_index_db = str(
+        db_path
+        or os.getenv(
+            "LIBRARY_INDEX_DB_PATH",
+            Path(__file__).resolve().parent.parent / "data" / "library_index.db",
+        )
+    )
+    _emit(
+        "fix_audio_tags  "
+        f"root={root}  dry_run={dry_run}  limit={limit}  full_scan={full_scan}  started={ts}",
+        lines,
+    )
     _emit("=" * 72, lines)
 
     if not _HAS_MUTAGEN:
@@ -121,13 +205,36 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
         return lines
 
     total_fixed = 0
+    if selected_paths is not None:
+        inventory_summary = None
+        all_audio = selected_paths[:limit] if limit is not None else list(selected_paths)
+        _emit(
+            f"  Using explicit selection of {len(all_audio)} audio file(s) for tag review.",
+            lines,
+        )
+    else:
+        inventory_summary = refresh_library_index(
+            library_index_db,
+            root,
+            progress_callback=lambda line: _emit(line, lines),
+            limit=limit,
+            scan_xml_sidecars=False,
+        )
+        all_audio = list_tag_fix_candidates(
+            library_index_db,
+            root,
+            force_full=full_scan,
+            limit=limit if full_scan else None,
+        )
+        _emit(
+            "  Indexed "
+            f"{inventory_summary['scanned']} audio file(s); "
+            f"selected {len(all_audio)} candidate file(s) for tag review.",
+            lines,
+        )
 
-    all_audio = sorted(
-        p for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS
-    )
     total = len(all_audio)
-    _emit(f"  Found {total} audio file(s) to check", lines)
+    _emit(f"  Found {total} candidate audio file(s) to check", lines)
 
     # Partition files into normal vs various-artist folders.
     normal: list[Path] = []
@@ -177,6 +284,7 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
             )
 
         canonical_artist = _artist_dir_for(audio_path, root)
+        _emit(f"CHECK TAGS: {idx + 1}/{len(normal)}  {audio_path.relative_to(root)}", lines)
 
         try:
             mf = MutagenFile(audio_path, easy=True)
@@ -189,12 +297,12 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
             p1_skipped += 1
             continue
 
-        def _first(key: str) -> str:
-            val = mf.get(key)
+        def _first(audio_file, key: str) -> str:
+            val = audio_file.get(key)
             return str(val[0]).strip() if val else ""
 
-        current_artist = _first("artist")
-        current_albumartist = _first("albumartist")
+        current_artist = _first(mf, "artist")
+        current_albumartist = _first(mf, "albumartist")
         needs_artist = current_artist != canonical_artist
         needs_albumartist = current_albumartist != canonical_artist
 
@@ -258,6 +366,7 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
 
         canonical_artist = _artist_dir_for(audio_path, root)  # e.g. "Various Artists"
         track_artist = _parse_artist_from_stem(audio_path.stem)
+        _emit(f"CHECK VA TAGS: {idx + 1}/{len(va)}  {audio_path.relative_to(root)}", lines)
         if not track_artist:
             p2_no_parse += 1
             continue
@@ -273,12 +382,12 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
             p2_skipped += 1
             continue
 
-        def _firstv(key: str) -> str:
-            val = mf.get(key)
+        def _firstv(audio_file, key: str) -> str:
+            val = audio_file.get(key)
             return str(val[0]).strip() if val else ""
 
-        current_artist = _firstv("artist")
-        current_albumartist = _firstv("albumartist")
+        current_artist = _firstv(mf, "artist")
+        current_albumartist = _firstv(mf, "albumartist")
 
         # artist → parsed from filename; albumartist → VA folder name
         needs_artist = current_artist != track_artist
@@ -319,13 +428,85 @@ def fix_tags(root: Path, *, dry_run: bool = False, limit: int | None = None) -> 
         lines,
     )
 
+    enrichment_limit = None
+    if limit is not None:
+        enrichment_limit = max(limit - total_fixed, 0)
+
+    musicbrainz_updated = 0
+    musicbrainz_failed = 0
+    musicbrainz_unresolved = 0
+    musicbrainz_exit_code = 0
+
+    _emit("", lines)
+    _emit("--- Pass 3: enriching missing MusicBrainz tags ---", lines)
+    if enrichment_limit == 0:
+        _emit("  ... limit already reached during folder-tag cleanup, skipping pass 3.", lines)
+    else:
+        enrich_lines, musicbrainz_exit_code = _run_musicbrainz_enrichment(
+            root,
+            dry_run=dry_run,
+            limit=enrichment_limit,
+            full_scan=full_scan,
+            db_path=library_index_db,
+            selected_paths=all_audio,
+        )
+        lines.extend(enrich_lines)
+        enrich_summary = _parse_summary_counts(enrich_lines)
+        musicbrainz_updated = enrich_summary.get("updated", 0)
+        musicbrainz_failed = enrich_summary.get("failed", 0)
+        musicbrainz_unresolved = enrich_summary.get("unresolved", 0)
+
+    total_changed = total_fixed + musicbrainz_updated
+    total_failed = p1_failed + p2_failed + musicbrainz_failed
+
     _emit("", lines)
     _emit("=" * 72, lines)
     _emit(
-        f"SUMMARY  total_fixed={total_fixed}"
-        f"  pass1_fixed={p1_fixed}  pass2_fixed={p2_fixed}"
-        f"  failed={p1_failed + p2_failed}  dry_run={dry_run}",
+        f"SUMMARY  total_changed={total_changed}"
+        f"  folder_fixed={total_fixed}  musicbrainz_updated={musicbrainz_updated}"
+        f"  unresolved={musicbrainz_unresolved}  failed={total_failed}"
+        f"  dry_run={dry_run}  full_scan={full_scan}",
         lines,
+    )
+    if not dry_run:
+        if selected_paths is not None:
+            refresh_library_index_for_paths(
+                library_index_db,
+                root,
+                all_audio,
+                scan_xml_sidecars=False,
+            )
+        else:
+            refresh_library_index(
+                library_index_db,
+                root,
+                progress_callback=lambda line: _emit(line, lines),
+                limit=limit,
+                scan_xml_sidecars=False,
+            )
+    record_library_tool_run(
+        library_index_db,
+        tool_name="fix-tags",
+        root=root,
+        run_mode="full" if full_scan else "incremental",
+        started_at=started_at,
+        completed_at=datetime.datetime.now(datetime.UTC).isoformat(),
+        scanned_count=total + musicbrainz_updated + musicbrainz_unresolved + musicbrainz_failed,
+        changed_count=total_changed,
+        error_count=total_failed + musicbrainz_unresolved,
+        result={
+            "inventory": inventory_summary,
+            "total_changed": total_changed,
+            "folder_fixed": total_fixed,
+            "pass1_fixed": p1_fixed,
+            "pass2_fixed": p2_fixed,
+            "musicbrainz_updated": musicbrainz_updated,
+            "musicbrainz_unresolved": musicbrainz_unresolved,
+            "musicbrainz_exit_code": musicbrainz_exit_code,
+            "failed": total_failed,
+            "dry_run": dry_run,
+            "full_scan": full_scan,
+        },
     )
     return lines
 
@@ -350,6 +531,11 @@ def main() -> int:
         metavar="N",
         help="Stop after fixing (or previewing) N total files across both passes.",
     )
+    parser.add_argument(
+        "--full-scan",
+        action="store_true",
+        help="Inspect all indexed audio files instead of only the catalog-reported mismatches.",
+    )
     args = parser.parse_args()
 
     if not args.root:
@@ -365,7 +551,12 @@ def main() -> int:
         print(f"ERROR: {root} is not a directory.", file=sys.stderr)
         return 1
 
-    log_lines = fix_tags(root, dry_run=args.dry_run, limit=args.limit)
+    log_lines = fix_tags(
+        root,
+        dry_run=args.dry_run,
+        limit=args.limit,
+        full_scan=args.full_scan,
+    )
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_name = f"fix_audio_tags_{log_ts}.log"

@@ -1,7 +1,7 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg chromaprint-tools \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -13,9 +13,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev
 
+COPY env_config.py ./
+COPY validate_env.py ./
 COPY app ./app
+COPY scripts ./scripts
 COPY .env.example ./.env.example
+COPY config.json.example ./config.json.example
 
-EXPOSE 8000
+EXPOSE 3000
 
-CMD ["uv", "run", "waitress-serve", "--host=0.0.0.0", "--port=8000", "app:app"]
+CMD ["uv", "run", "waitress-serve", "--host=0.0.0.0", "--port=3000", "app:app"]

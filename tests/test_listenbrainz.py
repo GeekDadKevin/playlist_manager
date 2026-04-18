@@ -191,3 +191,35 @@ def test_fetch_remote_jspf_uses_configured_service_when_url_blank(tmp_path) -> N
     assert upload.playlist_name == "Auto Mix"
     assert upload.remote_url.endswith(f"/1/playlist/{playlist_id}")
     assert upload.count == 1
+
+
+def test_listenbrainz_lookup_recording_metadata_returns_mbids() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/1/metadata/lookup/"
+        assert request.headers.get("Authorization") == "Token secret-token"
+        assert request.url.params.get("artist_name") == "Massive Attack"
+        assert request.url.params.get("recording_name") == "Teardrop"
+        return httpx.Response(
+            200,
+            json={
+                "payload": {
+                    "recording_mbid": "abcd1234-0000-1111-2222-abcdefabcdef",
+                    "release_mbid": "fedcba98-7654-3210-ffff-eeeeeeeeeeee",
+                }
+            },
+        )
+
+    service = ListenBrainzService(
+        username="demo",
+        auth_token="secret-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    metadata = service.lookup_recording_metadata(
+        artist_name="Massive Attack",
+        recording_name="Teardrop",
+        release_name="Mezzanine",
+    )
+
+    assert metadata["recording_mbid"] == "abcd1234-0000-1111-2222-abcdefabcdef"
+    assert metadata["release_mbid"] == "fedcba98-7654-3210-ffff-eeeeeeeeeeee"

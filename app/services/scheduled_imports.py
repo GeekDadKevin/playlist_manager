@@ -17,6 +17,7 @@ from app.services.settings_store import (
     load_settings,
     matches_playlist_target,
     record_run_result,
+    settings_defaults_from_config,
     should_run_now,
 )
 
@@ -47,7 +48,10 @@ def run_scheduled_playlists(
     transport: httpx.BaseTransport | None = None,
 ) -> dict[str, Any]:
     settings_path = str(config.get("SETTINGS_FILE", "")).strip()
-    active_settings = settings or load_settings(settings_path)
+    active_settings = settings or load_settings(
+        settings_path,
+        default_overrides=settings_defaults_from_config(config),
+    )
     run_key = current_schedule_key(active_settings)
 
     try:
@@ -207,7 +211,10 @@ def run_scheduled_playlists(
 def _scheduler_loop(app: Flask, stop_event: Event) -> None:
     while not stop_event.wait(30.0):
         with app.app_context():
-            settings = load_settings(app.config["SETTINGS_FILE"])
+            settings = load_settings(
+                app.config["SETTINGS_FILE"],
+                default_overrides=settings_defaults_from_config(app.config),
+            )
             if not should_run_now(settings):
                 continue
 

@@ -68,7 +68,12 @@ def ensure_cover_art(
                     client=client,
                 )
             except Exception as exc:
-                log.warning("ListenBrainz lookup failed for %s - %s: %s", lookup_artist, lookup_title, exc)
+                log.warning(
+                    "ListenBrainz lookup failed for %s - %s: %s",
+                    lookup_artist,
+                    lookup_title,
+                    exc,
+                )
                 lookup = {}
 
             release_mbid = str(lookup.get("release_mbid") or "").strip()

@@ -2,14 +2,27 @@ services:
   web:
     build:
       context: .
+    restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
+      PLAYLIST_MANAGER_USE_CONFIG_JSON: "0"
       FLASK_ENV: ${FLASK_ENV:-development}
       SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
       APP_PORT: "${APP_PORT:-3000}"
-      DATA_DIR: ${DATA_DIR:-/app/data}
+      DATA_DIR: /app/data
+      LISTENBRAINZ_API_BASE_URL: ${LISTENBRAINZ_API_BASE_URL:-https://api.listenbrainz.org}
+      LISTENBRAINZ_USERNAME: ${LISTENBRAINZ_USERNAME:-}
+      LISTENBRAINZ_AUTH_TOKEN: ${LISTENBRAINZ_AUTH_TOKEN:-}
+      ACOUSTID_API_KEY: ${ACOUSTID_API_KEY:-}
+      ACOUSTID_LOOKUP_TIMEOUT: ${ACOUSTID_LOOKUP_TIMEOUT:-20}
+      ACOUSTID_SCORE_THRESHOLD: ${ACOUSTID_SCORE_THRESHOLD:-0.9}
+      ACOUSTID_FINGERPRINT_LENGTH: ${ACOUSTID_FINGERPRINT_LENGTH:-120}
+      FPCALC_BIN: fpcalc
       SYNC_MAX_TRACKS: ${SYNC_MAX_TRACKS:-100}
+      DOWNLOAD_THREADS: ${DOWNLOAD_THREADS:-1}
       NAVIDROME_BASE_URL: ${NAVIDROME_BASE_URL:-http://navidrome:4533}
       NAVIDROME_PLAYLIST_DIR: /navidrome/playlist
       NAVIDROME_PLAYLISTS_DIR: /navidrome/playlist
@@ -18,15 +31,28 @@ services:
       DEEZER_ARL: ${DEEZER_ARL:-}
       DEEZER_QUALITY: ${DEEZER_QUALITY:-FLAC}
       DEEZER_MATCH_THRESHOLD: ${DEEZER_MATCH_THRESHOLD:-72}
+      DOWNLOAD_PATH_TEMPLATE: ${DOWNLOAD_PATH_TEMPLATE:-{artist}/{album}/{artist} - {track} - {title}}
+      SOUNDCLOUD_FALLBACK: ${SOUNDCLOUD_FALLBACK:-1}
+      SOUNDCLOUD_MATCH_THRESHOLD: ${SOUNDCLOUD_MATCH_THRESHOLD:-72}
+      SOUNDCLOUD_REQUEST_TIMEOUT: ${SOUNDCLOUD_REQUEST_TIMEOUT:-25}
+      SOUNDCLOUD_REQUEST_RETRIES: ${SOUNDCLOUD_REQUEST_RETRIES:-3}
+      SOUNDCLOUD_FORCE_IPV4: ${SOUNDCLOUD_FORCE_IPV4:-1}
+      YOUTUBE_FALLBACK: ${YOUTUBE_FALLBACK:-0}
+      YOUTUBE_MATCH_THRESHOLD: ${YOUTUBE_MATCH_THRESHOLD:-72}
+      YOUTUBE_REQUEST_TIMEOUT: ${YOUTUBE_REQUEST_TIMEOUT:-25}
+      YOUTUBE_REQUEST_RETRIES: ${YOUTUBE_REQUEST_RETRIES:-3}
+      YOUTUBE_FORCE_IPV4: ${YOUTUBE_FORCE_IPV4:-1}
     volumes:
-      - .:/app
-      - ./config.json:/app/config.json:ro
       - playlist-data:/app/data
       - ${NAVIDROME_MUSIC_ROOT:?Set NAVIDROME_MUSIC_ROOT in .env}:/navidrome/root
       - ${NAVIDROME_PLAYLIST_DIR:?Set NAVIDROME_PLAYLIST_DIR in .env}:/navidrome/playlist
-    command: >
-      sh -c "uv sync --dev &&
-             uv run waitress-serve --host=0.0.0.0 --port=3000 app:app"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   playlist-data:

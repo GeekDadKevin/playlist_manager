@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
 import logging
+import sqlite3
+import sys
+import time
+from pathlib import Path
 
 from flask import (
     Blueprint,
     current_app,
     flash,
+    make_response,
     redirect,
     render_template,
     request,
@@ -17,6 +21,18 @@ from flask import (
 from flask.typing import ResponseReturnValue
 
 from app.matching import build_search_queries
+from app.services.audio_health import find_ffmpeg_executable
+from app.services.audio_identification import (
+    AcoustIdService,
+    find_fpcalc_executable,
+    lookup_musicbrainz_metadata_match,
+)
+from app.services.audio_identification_review import (
+    apply_identification_metadata,
+    build_review_item,
+    fingerprint_guardrail_assessment,
+    review_item_to_details,
+)
 from app.services.deezer_download import DeezerDownloadService
 from app.services.ingest import (
     fetch_remote_jspf,
@@ -24,7 +40,29 @@ from app.services.ingest import (
     load_saved_playlist,
     save_uploaded_playlist,
 )
+from app.services.library_catalog import (
+    CATALOG_FILTERS,
+    CATALOG_PAGE_SIZE,
+    catalog_batch_action_label,
+    catalog_batch_actions,
+    catalog_filter_counts,
+    list_catalog_tracks,
+    load_last_catalog_batch_result,
+    run_catalog_batch_action,
+)
+from app.services.library_index import (
+    get_library_report_counts,
+    list_library_report_items,
+    load_latest_library_tool_run,
+    load_library_tool_run,
+    record_musicbrainz_verification,
+    refresh_library_index,
+    refresh_library_index_for_paths,
+    update_identify_audio_review_status,
+    update_library_tool_run_result,
+)
 from app.services.listenbrainz import ListenBrainzService
+from app.services.musicbrainz import MusicBrainzService
 from app.services.navidrome_playlists import export_navidrome_playlist
 from app.services.playlist_history import (
     export_playlist_from_history,
@@ -37,6 +75,7 @@ from app.services.settings_store import (
     cron_expression,
     load_settings,
     matches_playlist_target,
+    settings_defaults_from_config,
 )
 from app.services.settings_store import (
     save_settings as save_app_settings,
@@ -145,14 +184,18 @@ def index() -> str:
 
 @web_bp.route("/settings", methods=["GET", "POST"])
 def settings_page() -> ResponseReturnValue:
+    settings_defaults = settings_defaults_from_config(current_app.config)
     if request.method == "POST":
-        existing_settings = load_settings(current_app.config["SETTINGS_FILE"])
+        existing_settings = load_settings(
+            current_app.config["SETTINGS_FILE"],
+            default_overrides=settings_defaults,
+        )
         updated_settings = save_app_settings(
             current_app.config["SETTINGS_FILE"],
             {
                 **existing_settings,
                 "theme": request.form.get("theme", existing_settings.get("theme", "dark")),
-                "automation_enabled": request.form.get("automation_enabled", ""),
+                "automation_enabled": "automation_enabled" in request.form,
                 "schedule_day": request.form.get(
                     "schedule_day", existing_settings.get("schedule_day", "monday")
                 ),
@@ -163,20 +206,15 @@ def settings_page() -> ResponseReturnValue:
                     "playlist_targets",
                     ", ".join(existing_settings.get("playlist_targets", [])),
                 ),
-                "sync_with_downloads": request.form.get("sync_with_downloads", ""),
-                "soundcloud_fallback": request.form.get(
-                    "soundcloud_fallback",
-                    existing_settings.get("soundcloud_fallback", True),
-                ),
-                "youtube_fallback": request.form.get(
-                    "youtube_fallback",
-                    existing_settings.get("youtube_fallback", False),
-                ),
+                "sync_with_downloads": "sync_with_downloads" in request.form,
+                "soundcloud_fallback": "soundcloud_fallback" in request.form,
+                "youtube_fallback": "youtube_fallback" in request.form,
                 "download_threads": request.form.get(
                     "download_threads",
                     existing_settings.get("download_threads", 1),
                 ),
             },
+            default_overrides=settings_defaults,
         )
 
         action = request.form.get("action", "save")
@@ -193,15 +231,7 @@ def settings_page() -> ResponseReturnValue:
         return redirect(url_for("web.settings_page"))
 
     settings_path = Path(current_app.config["SETTINGS_FILE"])
-    settings = load_settings(settings_path)
-    if not settings_path.exists():
-        settings["soundcloud_fallback"] = _bool_config(
-            current_app.config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")
-        )
-        settings["youtube_fallback"] = _bool_config(
-            current_app.config.get("YOUTUBE_FALLBACK_ENABLED", "0")
-        )
-        settings["download_threads"] = int(current_app.config.get("DOWNLOAD_THREADS", 1) or 1)
+    settings = load_settings(settings_path, default_overrides=settings_defaults)
     history = get_playlist_stats(current_app.config["PLAYLIST_DB_PATH"])
     return render_template(
         "settings.html",
@@ -450,15 +480,10 @@ def sync_upload() -> ResponseReturnValue:
 
 def _start_sync_for_upload(upload, *, max_tracks: int) -> str:
     settings_path = Path(current_app.config["SETTINGS_FILE"])
-    app_settings = load_settings(settings_path)
-    if not settings_path.exists():
-        app_settings["soundcloud_fallback"] = _bool_config(
-            current_app.config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")
-        )
-        app_settings["youtube_fallback"] = _bool_config(
-            current_app.config.get("YOUTUBE_FALLBACK_ENABLED", "0")
-        )
-        app_settings["download_threads"] = int(current_app.config.get("DOWNLOAD_THREADS", 1) or 1)
+    app_settings = load_settings(
+        settings_path,
+        default_overrides=settings_defaults_from_config(current_app.config),
+    )
     sync_config = {
         **current_app.config,
         "SOUNDCLOUD_FALLBACK_ENABLED": app_settings.get("soundcloud_fallback", True),
@@ -676,6 +701,230 @@ def logs_page() -> str:
     return render_template("logs.html")
 
 
+@web_bp.get("/catalog")
+def catalog_page() -> str:
+    music_root = current_app.config.get("NAVIDROME_MUSIC_ROOT", "").strip()
+    issue_filter = request.args.get("issue_filter", "any-anomaly").strip().lower()
+    search = request.args.get("search", "").strip()
+    sort_by = request.args.get("sort_by", "path").strip().lower()
+    sort_dir = request.args.get("sort_dir", "asc").strip().lower()
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 25, type=int)
+    counts: dict[str, int] = {filter_id: 0 for filter_id, _label in CATALOG_FILTERS}
+    listing: dict[str, object] = {
+        "items": [],
+        "page": 1,
+        "pages": 1,
+        "per_page": per_page,
+        "total": 0,
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
+        "filter": issue_filter,
+        "search": search,
+    }
+    last_batch = load_last_catalog_batch_result(current_app.config["DATA_DIR"])
+
+    if music_root:
+        root = Path(music_root)
+        db_path = current_app.config["LIBRARY_INDEX_DB_PATH"]
+        try:
+            if root.is_dir():
+                counts = catalog_filter_counts(db_path, root)
+                listing = list_catalog_tracks(
+                    db_path,
+                    root,
+                    issue_filter=issue_filter,
+                    search=search,
+                    sort_by=sort_by,
+                    sort_dir=sort_dir,
+                    page=page,
+                    per_page=per_page,
+                )
+            else:
+                flash("NAVIDROME_MUSIC_ROOT is not a directory.", "error")
+        except sqlite3.OperationalError as exc:
+            log.warning("Library catalog is busy while loading /catalog: %s", exc)
+            flash(
+                "Library catalog is busy right now. Try the Catalog page again in a moment.",
+                "error",
+            )
+
+    return render_template(
+        "catalog.html",
+        music_root=music_root,
+        filter_counts=counts,
+        filter_options=CATALOG_FILTERS,
+        batch_actions=catalog_batch_actions(),
+        listing=listing,
+        last_batch=last_batch,
+        issue_filter=issue_filter,
+        search=search,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        per_page=per_page,
+    )
+
+
+@web_bp.post("/catalog/batch")
+def catalog_batch_action() -> ResponseReturnValue:
+    action = request.form.get("action", "").strip().lower()
+    dry_run = "dry_run" in request.form
+    selected_paths = request.form.getlist("selected_paths")
+    return_query = request.form.get("return_query", "").strip().lstrip("?")
+    redirect_url = url_for("web.catalog_page")
+    if return_query:
+        redirect_url = f"{redirect_url}?{return_query}"
+
+    try:
+        result = run_catalog_batch_action(
+            dict(current_app.config),
+            action=action,
+            relative_paths=selected_paths,
+            dry_run=dry_run,
+        )
+    except Exception as exc:
+        flash(f"Batch action failed: {exc}", "error")
+        return redirect(redirect_url)
+
+    flash(
+        f"{result['label']}: {result['summary_line'] or 'Completed.'}",
+        "success" if int(result.get("exit_code", 0) or 0) == 0 else "error",
+    )
+    return redirect(redirect_url)
+
+
+@web_bp.post("/catalog/batch/start")
+def catalog_batch_start() -> ResponseReturnValue:
+    action = request.form.get("action", "").strip().lower()
+    dry_run = "dry_run" in request.form
+    selected_paths = request.form.getlist("selected_paths")
+    if len(selected_paths) > CATALOG_PAGE_SIZE:
+        return {
+            "ok": False,
+            "error": (
+                f"Batch actions are limited to {CATALOG_PAGE_SIZE} tracks "
+                "at a time right now."
+            ),
+        }, 400
+
+    music_root = current_app.config.get("NAVIDROME_MUSIC_ROOT", "").strip()
+    if not music_root:
+        return {"ok": False, "error": "NAVIDROME_MUSIC_ROOT is not configured."}, 400
+
+    script_path = Path(current_app.root_path).parent / "scripts" / "run_catalog_batch.py"
+    cmd = [
+        sys.executable,
+        str(script_path),
+        music_root,
+        "--action",
+        action,
+    ]
+    for relative_path in selected_paths:
+        cmd.extend(["--relative-path", relative_path])
+    if dry_run:
+        cmd.append("--dry-run")
+
+    snapshot = start_process_job(
+        "catalog-batch",
+        label=f"Catalog Batch · {catalog_batch_action_label(action)}",
+        description="Running a selected-track catalog maintenance batch.",
+        cmd=cmd,
+        dry_run=dry_run,
+        metadata={
+            "action": action,
+            "selected_count": len(selected_paths),
+        },
+        env_overrides={
+            "NAVIDROME_MUSIC_ROOT": music_root,
+            "LIBRARY_INDEX_DB_PATH": str(current_app.config["LIBRARY_INDEX_DB_PATH"]),
+            "DATA_DIR": str(current_app.config["DATA_DIR"]),
+        },
+    )
+    if snapshot is None:
+        return {"ok": False, "error": "A catalog batch is already running."}, 409
+
+    response = make_response(
+        {
+            "ok": True,
+            "primary": snapshot,
+            "status_url": url_for("web.catalog_batch_status"),
+            "stop_url": url_for("web.catalog_batch_stop"),
+            "stream_url": url_for("web.catalog_batch_stream"),
+        },
+        202,
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@web_bp.get("/catalog/batch/status")
+def catalog_batch_status() -> ResponseReturnValue:
+    snapshot = get_tool_status("catalog-batch", line_limit=400)
+    response = make_response(
+        {
+            "active": bool(snapshot and snapshot.get("status") in {"running", "stopping"}),
+            "primary": snapshot,
+        },
+        200,
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@web_bp.get("/catalog/batch/stream")
+def catalog_batch_stream() -> ResponseReturnValue:
+    def generate():
+        snapshot = get_tool_status("catalog-batch", line_limit=400)
+        if snapshot is None:
+            yield "data: __EXIT__1\n\n"
+            return
+
+        lines = list(snapshot.get("lines", []))
+        for line in lines:
+            yield f"data: {line.replace(chr(10), ' ')}\n\n"
+        sent_count = len(lines)
+
+        while True:
+            latest = get_tool_status("catalog-batch", line_limit=400)
+            if latest is None:
+                yield "data: __EXIT__1\n\n"
+                return
+
+            current_lines = list(latest.get("lines", []))
+            if len(current_lines) < sent_count:
+                yield "data: __RESET__\n\n"
+                sent_count = 0
+
+            for line in current_lines[sent_count:]:
+                yield f"data: {line.replace(chr(10), ' ')}\n\n"
+            sent_count = len(current_lines)
+
+            status = str(latest.get("status") or "")
+            if status not in {"running", "stopping"}:
+                yield f"data: __EXIT__{int(latest.get('exit_code', 0) or 0)}\n\n"
+                return
+
+            time.sleep(0.5)
+
+    return current_app.response_class(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@web_bp.post("/catalog/batch/stop")
+def catalog_batch_stop() -> ResponseReturnValue:
+    snapshot = stop_tool("catalog-batch")
+    if snapshot is None:
+        return {"ok": False, "error": "No catalog batch is running."}, 404
+    return {"ok": True, "primary": snapshot}, 200
+
+
 @web_bp.get("/logs/data")
 def logs_data() -> ResponseReturnValue:
     log_path = Path(current_app.config["DATA_DIR"]) / "app.log"
@@ -700,13 +949,395 @@ def logs_clear() -> ResponseReturnValue:
 # Library tools
 # ---------------------------------------------------------------------------
 
-from app.services.library_tools import TOOLS, stream_tool  # noqa: E402
+from app.services.library_tools import (  # noqa: E402
+    TOOLS,
+    get_tool_status,
+    get_tool_status_snapshot,
+    start_process_job,
+    stop_tool,
+    stream_tool,
+)
 
 
 @web_bp.get("/tools")
 def tools_page() -> str:
     music_root = current_app.config.get("NAVIDROME_MUSIC_ROOT", "").strip()
-    return render_template("tools.html", tools=TOOLS, music_root=music_root)
+    ffmpeg_available = bool(find_ffmpeg_executable())
+    identify_audio_available = bool(find_fpcalc_executable(current_app.config)) and bool(
+        str(current_app.config.get("ACOUSTID_API_KEY", "")).strip()
+    )
+    identify_audio_last_run: dict[str, object] | None = None
+    report_filter = request.args.get("report_filter", "missing-xml").strip().lower()
+    report_limit = request.args.get("report_limit", 50, type=int)
+    refresh_catalog = request.args.get("refresh_catalog", "0") == "1"
+    report_counts: dict[str, int] = {}
+    report_items: list[dict[str, str]] = []
+    report_filters = [
+        ("musicbrainz-pending", "Needs MB Verify"),
+        ("accepted-as-is", "Accepted As Is"),
+        ("missing-xml", "Missing XML"),
+        ("incomplete-xml", "Incomplete XML"),
+        ("corrupted-audio", "Corrupted Audio"),
+        ("non-deezer-source", "Non-Deezer Source"),
+        ("orphaned-xml", "Orphaned XML"),
+    ]
+
+    if music_root:
+        root = Path(music_root)
+        db_path = current_app.config["LIBRARY_INDEX_DB_PATH"]
+        try:
+            if root.is_dir():
+                if refresh_catalog:
+                    refresh_library_index(db_path, root)
+                report_counts = get_library_report_counts(db_path, root)
+                report_items = list_library_report_items(
+                    db_path,
+                    root,
+                    report_filter=report_filter,
+                    limit=max(report_limit, 1),
+                )
+                identify_audio_last_run = load_latest_library_tool_run(
+                    db_path,
+                    tool_name="identify-audio",
+                    root=root,
+                )
+            elif refresh_catalog:
+                flash("NAVIDROME_MUSIC_ROOT is not a directory.", "error")
+        except sqlite3.OperationalError as exc:
+            log.warning("Library catalog is busy while loading /tools: %s", exc)
+            flash(
+                "Library catalog is busy right now. Try the Tools page again in a moment.",
+                "error",
+            )
+
+    response = make_response(
+        render_template(
+            "tools.html",
+            tools=TOOLS,
+            ffmpeg_available=ffmpeg_available,
+            identify_audio_available=identify_audio_available,
+            identify_audio_last_run=identify_audio_last_run,
+            music_root=music_root,
+            report_counts=report_counts,
+            report_items=report_items,
+            report_filter=report_filter,
+            report_filters=report_filters,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+def _tools_page_redirect(
+    report_filter: str = "missing-xml",
+    *,
+    open_identify_review: bool = False,
+    open_identify_retry_result: bool = False,
+    identify_retry_path: str | None = None,
+) -> ResponseReturnValue:
+    location = url_for(
+        'web.tools_page',
+        report_filter=report_filter,
+        open_identify_review='1' if open_identify_review else None,
+        open_identify_retry_result='1' if open_identify_retry_result else None,
+        identify_retry_path=identify_retry_path or None,
+    )
+    return redirect(f"{location}#card-identify-audio")
+
+
+def _identify_audio_review_context(
+    run_id: int,
+    relative_path: str,
+) -> tuple[dict[str, object], Path, dict[str, object], str]:
+    music_root = (
+        Path(str(current_app.config.get("NAVIDROME_MUSIC_ROOT", "")).strip())
+        .expanduser()
+        .resolve()
+    )
+    if not music_root.is_dir():
+        raise ValueError("NAVIDROME_MUSIC_ROOT is not configured correctly.")
+
+    run = load_library_tool_run(current_app.config["LIBRARY_INDEX_DB_PATH"], run_id)
+    if run is None or run.get("tool_name") != "identify-audio":
+        raise ValueError("That Identify Tracks By Audio review snapshot could not be found.")
+    if str(run.get("root_path") or "") != str(music_root):
+        raise ValueError("That review snapshot belongs to a different music root.")
+
+    result = run.get("result") if isinstance(run.get("result"), dict) else {}
+    review = result.get("review") if isinstance(result.get("review"), dict) else {}
+    normalized_path = str(relative_path or "").replace("\\", "/").strip()
+    for group_name in ("low_confidence_items", "no_match_items"):
+        items = review.get(group_name)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("relative_path") or "").replace("\\", "/").strip() == normalized_path:
+                return run, music_root, item, group_name
+    raise ValueError("That fingerprint review item is no longer available.")
+
+
+def _write_identify_audio_review(run: dict[str, object], review: dict[str, object]) -> None:
+    low_confidence_items = review.get("low_confidence_items")
+    no_match_items = review.get("no_match_items")
+    low_confidence_list = low_confidence_items if isinstance(low_confidence_items, list) else []
+    no_match_list = no_match_items if isinstance(no_match_items, list) else []
+    review["low_confidence_items"] = low_confidence_list
+    review["no_match_items"] = no_match_list
+    review["low_confidence_count"] = len(low_confidence_list)
+    review["no_match_count"] = len(no_match_list)
+    review["recorded_count"] = len(low_confidence_list) + len(no_match_list)
+    review["truncated_count"] = max(int(review.get("truncated_count") or 0), 0)
+
+    result = run.get("result") if isinstance(run.get("result"), dict) else {}
+    result["review"] = review
+    update_library_tool_run_result(
+        current_app.config["LIBRARY_INDEX_DB_PATH"],
+        run_id=int(run["id"]),
+        result=result,
+    )
+
+
+@web_bp.post("/tools/identify-audio/review/accept")
+def identify_audio_review_accept() -> ResponseReturnValue:
+    run_id = request.form.get("run_id", type=int) or 0
+    relative_path = request.form.get("relative_path", "")
+    report_filter = request.form.get("report_filter", "missing-xml").strip().lower()
+
+    try:
+        run, music_root, item, group_name = _identify_audio_review_context(run_id, relative_path)
+        if group_name != "low_confidence_items":
+            raise ValueError("Only low-confidence fingerprint matches can be accepted.")
+        details = review_item_to_details(item)
+        if not details.get("recording_mbid"):
+            raise ValueError("That review item does not contain a usable MusicBrainz recording.")
+
+        audio_path = (music_root / str(item.get("relative_path") or "")).resolve()
+        update_identify_audio_review_status(
+            current_app.config["LIBRARY_INDEX_DB_PATH"],
+            audio_path,
+            status="",
+            root=music_root,
+        )
+        apply_identification_metadata(audio_path, details)
+        record_musicbrainz_verification(
+            current_app.config["LIBRARY_INDEX_DB_PATH"],
+            audio_path,
+            root=music_root,
+        )
+        refresh_library_index_for_paths(
+            current_app.config["LIBRARY_INDEX_DB_PATH"],
+            music_root,
+            [audio_path],
+            scan_xml_sidecars=True,
+        )
+
+        result = run.get("result") if isinstance(run.get("result"), dict) else {}
+        review = result.get("review") if isinstance(result.get("review"), dict) else {}
+        items = review.get(group_name)
+        review[group_name] = [
+            candidate
+            for candidate in items
+            if isinstance(candidate, dict)
+            and str(candidate.get("relative_path") or "").replace("\\", "/").strip()
+            != str(item.get("relative_path") or "").replace("\\", "/").strip()
+        ]
+        _write_identify_audio_review(run, review)
+        flash(f"Accepted fingerprint match for {item['relative_path']}.", "success")
+    except Exception as exc:
+        flash(f"Could not accept the fingerprint match: {exc}", "error")
+
+    return _tools_page_redirect(report_filter, open_identify_review=True)
+
+
+@web_bp.post("/tools/identify-audio/review/keep")
+def identify_audio_review_keep() -> ResponseReturnValue:
+    run_id = request.form.get("run_id", type=int) or 0
+    relative_path = request.form.get("relative_path", "")
+    report_filter = request.form.get("report_filter", "missing-xml").strip().lower()
+
+    try:
+        run, music_root, item, group_name = _identify_audio_review_context(run_id, relative_path)
+        audio_path = (music_root / str(item.get("relative_path") or "")).resolve()
+        update_identify_audio_review_status(
+            current_app.config["LIBRARY_INDEX_DB_PATH"],
+            audio_path,
+            status="accepted-as-is",
+            root=music_root,
+        )
+
+        result = run.get("result") if isinstance(run.get("result"), dict) else {}
+        review = result.get("review") if isinstance(result.get("review"), dict) else {}
+        items = review.get(group_name)
+        review[group_name] = [
+            candidate
+            for candidate in items
+            if isinstance(candidate, dict)
+            and str(candidate.get("relative_path") or "").replace("\\", "/").strip()
+            != str(item.get("relative_path") or "").replace("\\", "/").strip()
+        ]
+        _write_identify_audio_review(run, review)
+        flash(
+            f"Kept {item['relative_path']} as-is and removed it from fingerprint review.",
+            "success",
+        )
+    except Exception as exc:
+        flash(f"Could not keep the file as-is: {exc}", "error")
+
+    return _tools_page_redirect(report_filter, open_identify_review=True)
+
+
+@web_bp.post("/tools/identify-audio/review/retry")
+def identify_audio_review_retry() -> ResponseReturnValue:
+    run_id = request.form.get("run_id", type=int) or 0
+    relative_path = request.form.get("relative_path", "")
+    report_filter = request.form.get("report_filter", "missing-xml").strip().lower()
+
+    try:
+        run, music_root, item, _group_name = _identify_audio_review_context(run_id, relative_path)
+        audio_path = (music_root / str(item.get("relative_path") or "")).resolve()
+        update_identify_audio_review_status(
+            current_app.config["LIBRARY_INDEX_DB_PATH"],
+            audio_path,
+            status="",
+            root=music_root,
+        )
+        service = AcoustIdService.from_config(current_app.config)
+        musicbrainz = MusicBrainzService.from_config(current_app.config)
+        identified = service.identify_track(audio_path, musicbrainz_service=musicbrainz)
+
+        result = run.get("result") if isinstance(run.get("result"), dict) else {}
+        review = result.get("review") if isinstance(result.get("review"), dict) else {}
+        normalized_path = str(item.get("relative_path") or "").replace("\\", "/").strip()
+        low_confidence_items = [
+            candidate
+            for candidate in review.get("low_confidence_items", [])
+            if isinstance(candidate, dict)
+            and str(candidate.get("relative_path") or "").replace("\\", "/").strip()
+            != normalized_path
+        ]
+        no_match_items = [
+            candidate
+            for candidate in review.get("no_match_items", [])
+            if isinstance(candidate, dict)
+            and str(candidate.get("relative_path") or "").replace("\\", "/").strip()
+            != normalized_path
+        ]
+
+        match = identified.get("match") if isinstance(identified, dict) else {}
+        used_metadata_fallback = False
+        if not isinstance(match, dict) or not match.get("recording_mbid"):
+            match = lookup_musicbrainz_metadata_match(
+                audio_path,
+                musicbrainz_service=musicbrainz,
+                root=music_root,
+            )
+            used_metadata_fallback = bool(match.get("recording_mbid"))
+        if not isinstance(match, dict) or not match.get("recording_mbid"):
+            no_match_items.append(
+                {
+                    "relative_path": normalized_path,
+                    "reason": "no_match",
+                    "reason_label": "No match",
+                    "message": (
+                        "No AcoustID or MusicBrainz metadata match was returned "
+                        "for this file."
+                    ),
+                }
+            )
+            review["low_confidence_items"] = low_confidence_items
+            review["no_match_items"] = no_match_items
+            _write_identify_audio_review(run, review)
+            flash(
+                f"Retry did not find a usable AcoustID or MusicBrainz match for {relative_path}.",
+                "error",
+            )
+            return _tools_page_redirect(
+                report_filter,
+                open_identify_review=True,
+                open_identify_retry_result=True,
+                identify_retry_path=normalized_path,
+            )
+
+        guardrail = fingerprint_guardrail_assessment(audio_path, match)
+        if used_metadata_fallback or (identified.get("accepted") and guardrail["accepted"]):
+            apply_identification_metadata(audio_path, match)
+            record_musicbrainz_verification(
+                current_app.config["LIBRARY_INDEX_DB_PATH"],
+                audio_path,
+                root=music_root,
+            )
+            refresh_library_index_for_paths(
+                current_app.config["LIBRARY_INDEX_DB_PATH"],
+                music_root,
+                [audio_path],
+                scan_xml_sidecars=True,
+            )
+            review["low_confidence_items"] = low_confidence_items
+            review["no_match_items"] = no_match_items
+            _write_identify_audio_review(run, review)
+            resolved_with = (
+                "MusicBrainz metadata"
+                if used_metadata_fallback
+                else "high-confidence fingerprint"
+            )
+            flash(
+                f"Retry resolved {relative_path} with a {resolved_with} match.",
+                "success",
+            )
+            return _tools_page_redirect(
+                report_filter,
+                open_identify_review=True,
+                open_identify_retry_result=True,
+                identify_retry_path=normalized_path,
+            )
+
+        if identified.get("accepted"):
+            low_confidence_items.append(
+                build_review_item(
+                    normalized_path,
+                    match,
+                    reason="guardrail",
+                    reason_label="Similarity check",
+                    message=(
+                        "Retry still needs manual review before metadata can be trusted. "
+                        f"{guardrail['reason'] or 'Similarity check failed'}."
+                    ),
+                )
+            )
+        else:
+            low_confidence_items.append(
+                build_review_item(
+                    normalized_path,
+                    match,
+                    reason="low_confidence",
+                    reason_label="Low confidence",
+                    message=(
+                        "Retry still needs manual review before metadata can be trusted. "
+                        f"Score {float(match.get('acoustid_score') or 0.0):.2f}."
+                    ),
+                )
+            )
+        review["low_confidence_items"] = low_confidence_items
+        review["no_match_items"] = no_match_items
+        _write_identify_audio_review(run, review)
+        flash(
+            f"Retry updated the fingerprint candidate for {relative_path}, "
+            "but it still needs review.",
+            "success",
+        )
+    except Exception as exc:
+        flash(f"Could not retry the fingerprint lookup: {exc}", "error")
+
+    return _tools_page_redirect(
+        report_filter,
+        open_identify_review=True,
+        open_identify_retry_result=True,
+        identify_retry_path=relative_path,
+    )
 
 
 @web_bp.get("/tools/stream/<tool>")
@@ -726,12 +1357,19 @@ def tools_stream(tool: str) -> ResponseReturnValue:
         )
 
     dry_run = request.args.get("dry_run", "0") == "1"
+    full_scan = request.args.get("full_scan", "0") == "1"
     limit_raw = request.args.get("limit", "").strip()
     limit = int(limit_raw) if limit_raw.isdigit() else None
     root = Path(music_root)
 
     def generate():
-        for line in stream_tool(tool, root, dry_run=dry_run, limit=limit):
+        for line in stream_tool(
+            tool,
+            root,
+            dry_run=dry_run,
+            limit=limit,
+            full_scan=full_scan,
+        ):
             # Escape newlines inside a single SSE data field.
             safe = line.replace("\n", " ")
             yield f"data: {safe}\n\n"
@@ -741,3 +1379,53 @@ def tools_stream(tool: str) -> ResponseReturnValue:
         mimetype="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@web_bp.get("/tools/status")
+def tools_status() -> ResponseReturnValue:
+    line_limit = request.args.get("line_limit", 120, type=int)
+    tool = request.args.get("tool", "").strip()
+    if tool:
+        if tool not in TOOLS:
+            return {"error": f"Unknown tool: {tool!r}"}, 400
+        snapshot = get_tool_status(tool, line_limit=max(10, min(line_limit, 120)))
+        response = make_response(
+            {
+                "active": bool(snapshot and snapshot.get("status") == "running"),
+                "primary": snapshot,
+                "tools": [snapshot] if snapshot is not None else [],
+            },
+            200,
+        )
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+    snapshot = get_tool_status_snapshot(line_limit=max(10, min(line_limit, 400)))
+    response = make_response(snapshot, 200)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+@web_bp.post("/tools/stop/<tool>")
+def tools_stop(tool: str) -> ResponseReturnValue:
+    if tool not in TOOLS:
+        return {"error": f"Unknown tool: {tool!r}"}, 400
+
+    snapshot = stop_tool(tool)
+    if snapshot is None:
+        return {"error": f"Unknown tool: {tool!r}"}, 404
+
+    response = make_response(
+        {
+            "ok": True,
+            "tool": tool,
+            "primary": snapshot,
+        },
+        200,
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response

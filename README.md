@@ -47,6 +47,7 @@ To import ListenBrainz playlists through the browser chooser, set these optional
 LISTENBRAINZ_API_BASE_URL=https://api.listenbrainz.org
 LISTENBRAINZ_USERNAME=your_listenbrainz_username
 LISTENBRAINZ_AUTH_TOKEN=your_token_if_needed
+ACOUSTID_API_KEY=your_acoustid_api_key
 ```
 
 - Set `LISTENBRAINZ_USERNAME` to let the UI load both `Created For You` and your own ListenBrainz playlists into the chooser.
@@ -74,19 +75,52 @@ SOUNDCLOUD_FORCE_IPV4=1
 
 Sync is **sequential by default** (set `DOWNLOAD_THREADS=1`), but you can raise `DOWNLOAD_THREADS` to allow parallel downloads. If a Deezer match is low-confidence, the app pauses playlist export so you can optionally choose a SoundCloud or YouTube result through `yt-dlp` during manual review, or accept the remaining low-confidence items as missing in one step.
 
-If `config.json` exists at the repo root (mounted to `/app/config.json` in Docker), its values override any matching keys in `.env`.
-Use [config.json.example](config.json.example) as a shareable template without secrets.
+For local Windows or shell testing, `.env` is the authoritative config source. `config.json` is intended for container deployment and is auto-applied only when the app is running inside Docker. If you want a local run to inherit `config.json`, set `PLAYLIST_MANAGER_USE_CONFIG_JSON=1` before startup.
+Use [config.json.example](config.json.example) as a shareable Docker-oriented template without secrets.
 
 If Docker logs show a SoundCloud message like `_ssl.c:993: The handshake operation timed out`, the app now retries those lookups and forces IPv4 by default. You can further raise `SOUNDCLOUD_REQUEST_TIMEOUT` in `.env` if your network is slow.
+
+### Audio fingerprint fallback
+
+For badly tagged files where filename, embedded tags, and XML are all unreliable, the Library Tools page includes **Identify Tracks By Audio**. It uses `fpcalc` plus the AcoustID API to fingerprint the audio itself, then resolves the best MusicBrainz recording metadata before writing tags and XML.
+
+Optional `.env` or Docker config values:
+
+```env
+ACOUSTID_API_KEY=your_acoustid_api_key
+ACOUSTID_LOOKUP_TIMEOUT=20
+ACOUSTID_SCORE_THRESHOLD=0.9
+ACOUSTID_FINGERPRINT_LENGTH=120
+FPCALC_BIN=
+```
+
+- Only high-confidence AcoustID matches are applied automatically; low-confidence matches are left unresolved and reported in the tool log.
+- Docker installs `fpcalc` through `chromaprint-tools`; for local Windows runs, put `fpcalc` on `PATH` or set `FPCALC_BIN` explicitly.
+- This fallback is intentionally separate from normal tag repair because it is slower and depends on an external lookup service.
 
 ### Docker Compose
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
 Open <http://127.0.0.1:3000>.
+
+The Compose setup is intended to run from the built image directly. It no longer depends on a repo bind mount or a checked-in `config.json`, so a fresh machine only needs this repo, Docker, and a valid `.env` file.
+
+#### Healthcheck and smoke test
+
+The container now includes a healthcheck that waits for the app to respond at `/api/health`. You can also run a manual smoke test:
+
+```sh
+docker compose up -d --build
+docker compose exec web python scripts/smoke_check.py
+```
+
+If the healthcheck fails, check your `.env` for valid `NAVIDROME_MUSIC_ROOT` and `NAVIDROME_PLAYLIST_DIR` host paths, and make sure those folders exist and are accessible from the Docker host.
+
+For local Windows testing with [start.ps1](start.ps1), keep `DATA_DIR=./data` in `.env` so the SQLite databases and logs stay under the repo instead of landing in a container-style `/app/data` path.
 
 If you want the app to write `.m3u` playlists directly into the folder Navidrome watches, set these values in `.env` before starting Compose:
 
@@ -98,7 +132,9 @@ NAVIDROME_M3U_PATH_PREFIX=..
 
 Docker Compose mounts those host folders into `/navidrome/playlist` and `/navidrome/root` inside the container, so the app always works with stable in-container paths while you only configure real host locations in `.env`.
 
-The Docker image also installs `ffmpeg`, so the Library Tools page can run a real decode-based audio integrity scan inside the container instead of only checking metadata headers.
+Inside Docker, `DATA_DIR` is forced to `/app/data`, `fpcalc` is provided by the image, and the app ignores `config.json` unless you explicitly re-enable it. That keeps cross-machine startup predictable and avoids host-specific local config leaking into the container.
+
+The Docker image also installs `ffmpeg` and `fpcalc`, so the Library Tools page can run both decode-based audio integrity scans and AcoustID fingerprint lookup inside the container.
 
 The playlist exporter rewrites absolute paths rooted under `NAVIDROME_MUSIC_ROOT` into relative `.m3u` entries like `../Artist/Album/track.flac`, which is the format Navidrome expects when the playlist file lives inside a `playlists/` subfolder.
 

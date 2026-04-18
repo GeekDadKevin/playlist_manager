@@ -10,6 +10,10 @@
     Each tool streams live output as it runs.
     Use <strong>Dry Run</strong> to preview changes without writing anything.
   </p>
+  <p class="tool-desc">
+    Recommended order: Refresh Library Catalog, Check Audio Integrity, Identify By Structure,
+    Fix Audio Tags, Identify Tracks By Audio, then Sync XML Sidecars.
+  </p>
   {% if not music_root %}
   <p class="flash flash-error">
     <strong>NAVIDROME_MUSIC_ROOT</strong> is not set.
@@ -18,11 +22,120 @@
   {% endif %}
 </section>
 
+<section class="card tool-run-banner" id="tool-run-banner" hidden>
+  <div>
+    <strong id="tool-run-banner-title">A library tool is running.</strong>
+    <div class="tool-desc" id="tool-run-banner-copy">
+      Stay on this page while it finishes. Opening the status dialog will show the live session log.
+    </div>
+  </div>
+  <button type="button" class="btn-tool-run" id="tool-run-banner-button">View Status</button>
+</section>
+
+<section class="card">
+  <div class="tool-report-header">
+    <div>
+      <h3 style="margin:0;">Catalog Report</h3>
+      <p class="tool-desc" style="margin-top:.3rem;">
+        Review the current indexed state, including MusicBrainz verification coverage, before running maintenance jobs.
+        Use refresh when the catalog is stale or has not been built yet.
+      </p>
+    </div>
+    {% if music_root %}
+    <a class="btn-tool-run" href="{{ url_for('web.tools_page', report_filter=report_filter, refresh_catalog=1) }}">Refresh Catalog</a>
+    {% endif %}
+  </div>
+
+  {% if report_counts %}
+  <div class="tool-summary-grid">
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Indexed Audio</span>
+      <span class="tool-summary-value">{{ report_counts.indexed_audio }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Needs MB Verify</span>
+      <span class="tool-summary-value">{{ report_counts.musicbrainz_pending }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">MB Stale</span>
+      <span class="tool-summary-value">{{ report_counts.musicbrainz_stale }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Accepted As Is</span>
+      <span class="tool-summary-value">{{ report_counts.accepted_as_is }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Missing XML</span>
+      <span class="tool-summary-value">{{ report_counts.missing_xml }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Incomplete XML</span>
+      <span class="tool-summary-value">{{ report_counts.incomplete_xml }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Corrupted Audio</span>
+      <span class="tool-summary-value">{{ report_counts.corrupted_audio }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Non-Deezer Source</span>
+      <span class="tool-summary-value">{{ report_counts.non_deezer_source }}</span>
+    </div>
+    <div class="tool-summary-item">
+      <span class="tool-summary-key">Orphaned XML</span>
+      <span class="tool-summary-value">{{ report_counts.orphaned_xml }}</span>
+    </div>
+  </div>
+
+  <div class="report-filter-row">
+    {% for filter_id, filter_label in report_filters %}
+    <a
+      class="report-filter-pill{% if report_filter == filter_id %} active{% endif %}"
+      href="{{ url_for('web.tools_page', report_filter=filter_id) }}"
+    >{{ filter_label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="tool-log-shell report-shell">
+    {% if report_items %}
+    <ul class="report-list">
+      {% for item in report_items %}
+      <li class="report-item">
+        <span class="report-item-path">{{ item.path }}</span>
+        <span class="report-item-detail">{{ item.detail }}</span>
+        <span class="report-item-badge">{{ item.badge }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="tool-desc">No indexed items match this filter.</div>
+    {% endif %}
+  </div>
+  {% elif music_root %}
+  <p class="tool-desc">No catalog report is available yet. Refresh the catalog to build it.</p>
+  {% endif %}
+</section>
+
 <div class="tools-grid">
   {% for tool_id, tool in tools.items() %}
   <section class="card tool-card" id="card-{{ tool_id }}">
     <div class="tool-header">
-      <h3 class="tool-title">{{ tool.label }}</h3>
+      <h3 class="tool-title">
+        {{ tool.label }}
+        {% if tool_id == 'check-audio' %}
+        <span
+          class="tool-presence-dot {% if ffmpeg_available %}present{% else %}missing{% endif %}"
+          title="{% if ffmpeg_available %}ffmpeg detected{% else %}ffmpeg not detected{% endif %}"
+          aria-label="{% if ffmpeg_available %}ffmpeg detected{% else %}ffmpeg not detected{% endif %}"
+        ></span>
+        {% endif %}
+        {% if tool_id == 'identify-audio' %}
+        <span
+          class="tool-presence-dot {% if identify_audio_available %}present{% else %}missing{% endif %}"
+          title="{% if identify_audio_available %}fpcalc and AcoustID configured{% else %}fpcalc or AcoustID not configured{% endif %}"
+          aria-label="{% if identify_audio_available %}fpcalc and AcoustID configured{% else %}fpcalc or AcoustID not configured{% endif %}"
+        ></span>
+        {% endif %}
+      </h3>
       <span class="tool-status" id="status-{{ tool_id }}">idle</span>
     </div>
     <p class="tool-desc">{{ tool.description }}</p>
@@ -31,6 +144,10 @@
       <label class="checkbox-row">
         <input type="checkbox" id="dry-{{ tool_id }}">
         <span>Dry run (preview only)</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="full-{{ tool_id }}">
+        <span>Full scan</span>
       </label>
       <label class="limit-row">
         <span>Limit</span>
@@ -43,22 +160,348 @@
         data-tool="{{ tool_id }}"
         {% if not music_root %}disabled{% endif %}
       >Run</button>
+      <button
+        type="button"
+        class="btn-tool-run btn-tool-stop"
+        id="stop-{{ tool_id }}"
+        data-stop-tool="{{ tool_id }}"
+        disabled
+      >Force Stop</button>
+      <button
+        type="button"
+        class="btn-tool-run"
+        id="view-{{ tool_id }}"
+        data-view-tool="{{ tool_id }}"
+      >View Status</button>
+    </div>
+
+    <div class="tool-summary" id="summary-{{ tool_id }}" hidden>
+      <div class="tool-summary-title">Last Summary</div>
+      <div class="tool-summary-grid" id="summary-grid-{{ tool_id }}"></div>
     </div>
 
     <div class="tool-log-shell" id="shell-{{ tool_id }}">
-      <pre class="tool-log-output" id="log-{{ tool_id }}">Ready.</pre>
+      <div class="tool-log-output" id="log-{{ tool_id }}">Ready.</div>
     </div>
+
+    {% if tool_id == 'identify-audio' and identify_audio_last_run and identify_audio_last_run.result.review %}
+    {% set identify_review = identify_audio_last_run.result.review %}
+    <div class="tool-review-shell">
+      <div class="tool-review-header">
+        <div>
+          <div class="tool-summary-title">Last Fingerprint Review</div>
+          <p class="tool-desc" style="margin-top:.3rem;">
+            Saved from the most recent Identify Tracks By Audio run on
+            <code>{{ identify_audio_last_run.completed_at or identify_audio_last_run.started_at }}</code>.
+          </p>
+        </div>
+        <div class="tool-review-badges">
+          <span class="report-item-badge">Low confidence {{ identify_review.low_confidence_count or 0 }}</span>
+          <span class="report-item-badge">No match {{ identify_review.no_match_count or 0 }}</span>
+        </div>
+      </div>
+
+      <div class="tool-review-summary-row">
+        <p class="tool-desc tool-review-summary-copy">
+          Open the saved review dialog to inspect unresolved fingerprint matches and take action.
+        </p>
+        <button type="button" class="btn-tool-run" id="open-identify-review-dialog">Review Saved Matches</button>
+      </div>
+
+      {% if identify_review.truncated_count %}
+      <p class="tool-desc">Only the first {{ identify_review.recorded_count }} unresolved item(s) are shown. {{ identify_review.truncated_count }} more were omitted from the saved review snapshot.</p>
+      {% endif %}
+    </div>
+    {% endif %}
   </section>
   {% endfor %}
 </div>
 
+<div class="tool-run-modal-backdrop" id="tool-run-modal-backdrop" hidden></div>
+<section
+  class="tool-run-modal"
+  id="tool-run-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="tool-run-modal-title"
+  hidden
+>
+  <div class="tool-run-modal-header">
+    <div>
+      <div class="tool-summary-title">Tool Session</div>
+      <h3 id="tool-run-modal-title" class="tool-run-modal-title">Library tool</h3>
+    </div>
+    <span class="tool-status" id="tool-run-modal-status">idle</span>
+  </div>
+  <p class="tool-desc" id="tool-run-modal-copy">
+    Stay on this page while the tool is running. Navigation is blocked until the current run finishes.
+  </p>
+  <div class="tool-summary" id="tool-run-modal-meta" hidden>
+    <div class="tool-summary-grid" id="tool-run-modal-meta-grid"></div>
+  </div>
+  <div class="tool-log-shell tool-run-modal-log-shell">
+    <pre class="tool-log-output" id="tool-run-modal-log">Waiting for tool output.</pre>
+  </div>
+  <div class="tool-run-modal-actions">
+    <button type="button" class="btn-tool-run btn-tool-stop" id="tool-run-modal-stop" disabled>Force Stop</button>
+    <button type="button" class="btn-tool-run" id="tool-run-modal-close" disabled>Close</button>
+  </div>
+</section>
+
+{% if identify_audio_last_run and identify_audio_last_run.result.review %}
+{% set identify_review = identify_audio_last_run.result.review %}
+<div class="tool-run-modal-backdrop identify-review-backdrop" id="identify-review-backdrop" hidden></div>
+<section
+  class="tool-run-modal identify-review-modal"
+  id="identify-review-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="identify-review-title"
+  hidden
+>
+  <div class="tool-run-modal-header">
+    <div>
+      <div class="tool-summary-title">Fingerprint Review</div>
+      <h3 id="identify-review-title" class="tool-run-modal-title">Review Saved Matches</h3>
+    </div>
+    <div class="tool-review-badges">
+      <span class="report-item-badge">Low confidence {{ identify_review.low_confidence_count or 0 }}</span>
+      <span class="report-item-badge">No match {{ identify_review.no_match_count or 0 }}</span>
+    </div>
+  </div>
+  <p class="tool-desc identify-review-copy">
+    Saved from the most recent Identify Tracks By Audio run on
+    <code>{{ identify_audio_last_run.completed_at or identify_audio_last_run.started_at }}</code>.
+  </p>
+  <div class="tool-log-shell identify-review-log-shell">
+    <div class="identify-review-layout">
+      {% if identify_review.low_confidence_items %}
+      <div class="tool-review-group">
+        <div class="tool-summary-title">Manual Fingerprint Review</div>
+        <ul class="report-list tool-review-list">
+          {% for item in identify_review.low_confidence_items %}
+          <li class="report-item tool-review-item">
+            <div class="tool-review-copy">
+              <span class="report-item-path">{{ item.relative_path }}</span>
+              <span class="report-item-detail">
+                {{ item.match_artist or 'Unknown artist' }} — {{ item.match_title or 'Unknown title' }}
+                {% if item.match_album %} · {{ item.match_album }}{% endif %}
+                {% if item.acoustid_score is not none %} · score {{ '%.2f'|format(item.acoustid_score) }}{% endif %}
+              </span>
+              {% if item.message %}
+              <span class="report-item-detail">{{ item.message }}</span>
+              {% endif %}
+            </div>
+            <div class="tool-review-controls">
+              <form action="{{ url_for('web.identify_audio_review_accept') }}" method="post" class="tool-review-actions">
+                <input type="hidden" name="run_id" value="{{ identify_audio_last_run.id }}">
+                <input type="hidden" name="relative_path" value="{{ item.relative_path }}">
+                <input type="hidden" name="report_filter" value="{{ report_filter }}">
+                 <button type="submit" class="btn-tool-run">Accept</button>
+              </form>
+              <form action="{{ url_for('web.identify_audio_review_keep') }}" method="post" class="tool-review-actions">
+                <input type="hidden" name="run_id" value="{{ identify_audio_last_run.id }}">
+                <input type="hidden" name="relative_path" value="{{ item.relative_path }}">
+                <input type="hidden" name="report_filter" value="{{ report_filter }}">
+                 <button type="submit" class="btn-tool-run">Keep</button>
+              </form>
+              <form action="{{ url_for('web.identify_audio_review_retry') }}" method="post" class="tool-review-actions">
+                <input type="hidden" name="run_id" value="{{ identify_audio_last_run.id }}">
+                <input type="hidden" name="relative_path" value="{{ item.relative_path }}">
+                <input type="hidden" name="report_filter" value="{{ report_filter }}">
+                 <button type="submit" class="btn-tool-run" data-identify-retry-button>Retry</button>
+              </form>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if identify_review.no_match_items %}
+      <div class="tool-review-group">
+        <div class="tool-summary-title">No Fingerprint Match</div>
+        <ul class="report-list tool-review-list">
+          {% for item in identify_review.no_match_items %}
+          <li class="report-item tool-review-item">
+            <div class="tool-review-copy">
+              <span class="report-item-path">{{ item.relative_path }}</span>
+              <span class="report-item-detail">{{ item.message or 'No AcoustID match was returned for this file.' }}</span>
+            </div>
+            <div class="tool-review-controls">
+              <span class="report-item-badge">No match</span>
+              <form action="{{ url_for('web.identify_audio_review_keep') }}" method="post" class="tool-review-actions">
+                <input type="hidden" name="run_id" value="{{ identify_audio_last_run.id }}">
+                <input type="hidden" name="relative_path" value="{{ item.relative_path }}">
+                <input type="hidden" name="report_filter" value="{{ report_filter }}">
+                 <button type="submit" class="btn-tool-run">Keep</button>
+              </form>
+              <form action="{{ url_for('web.identify_audio_review_retry') }}" method="post" class="tool-review-actions">
+                <input type="hidden" name="run_id" value="{{ identify_audio_last_run.id }}">
+                <input type="hidden" name="relative_path" value="{{ item.relative_path }}">
+                <input type="hidden" name="report_filter" value="{{ report_filter }}">
+                 <button type="submit" class="btn-tool-run" data-identify-retry-button>Retry</button>
+              </form>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="tool-run-modal-actions">
+    <button type="button" class="btn-tool-run" id="close-identify-review-dialog">Close</button>
+  </div>
+</section>
+{% endif %}
+
+<div class="tool-run-modal-backdrop identify-retry-backdrop" id="identify-retry-backdrop" hidden></div>
+<section
+  class="tool-run-modal identify-retry-modal"
+  id="identify-retry-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="identify-retry-title"
+  hidden
+>
+  <div class="tool-run-modal-header">
+    <div>
+      <div class="tool-summary-title">Retry Lookup</div>
+      <h3 id="identify-retry-title" class="tool-run-modal-title">Fingerprint Retry</h3>
+    </div>
+    <span class="tool-status" id="identify-retry-status">idle</span>
+  </div>
+  <p class="tool-desc identify-review-copy" id="identify-retry-copy">
+    Review the retry result, then close this panel to continue with the main fingerprint review dialog.
+  </p>
+  <div class="tool-log-shell identify-retry-log-shell">
+    <div id="identify-retry-output" class="tool-log-output identify-retry-output"></div>
+  </div>
+  <div class="tool-run-modal-actions">
+    <button type="button" class="btn-tool-run" id="close-identify-retry-dialog">Close</button>
+  </div>
+</section>
+
 <style>
+  body {
+    background:
+      radial-gradient(circle at top, rgba(168, 85, 247, 0.18), transparent 0 30%),
+      radial-gradient(circle at 85% 12%, rgba(91, 33, 182, 0.2), transparent 0 24%),
+      #06030d;
+    color: #f3ecff;
+  }
+  .site-header {
+    border-bottom-color: rgba(140, 92, 255, 0.28);
+    background: rgba(14, 9, 27, 0.9);
+    box-shadow: 0 18px 48px rgba(4, 2, 10, 0.42);
+  }
+  .app-tab {
+    border-color: rgba(122, 75, 224, 0.38);
+    background: rgba(36, 22, 64, 0.92);
+    color: #cbb8f4;
+  }
+  .app-tab.is-active {
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    border-color: #b794ff;
+    color: #fff;
+    box-shadow: 0 12px 30px rgba(124, 58, 237, 0.32);
+  }
+  .card {
+    background: linear-gradient(180deg, rgba(18, 12, 31, 0.96), rgba(10, 7, 18, 0.98));
+    border-color: rgba(128, 90, 213, 0.3);
+    box-shadow: 0 22px 48px rgba(3, 2, 9, 0.42);
+  }
+  code {
+    background: rgba(63, 38, 102, 0.75);
+    color: #efe4ff;
+  }
+  .flash.flash-error {
+    background: rgba(90, 21, 35, 0.92);
+    border-color: rgba(248, 113, 113, 0.45);
+  }
+  body.tool-run-locked {
+    overflow: hidden;
+  }
+  .tool-run-banner[hidden],
+  .tool-run-modal-backdrop[hidden],
+  .tool-run-modal[hidden] {
+    display: none !important;
+  }
   .tools-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
     gap: 1.25rem;
   }
   .tool-card { display: flex; flex-direction: column; gap: .75rem; }
+  .tool-review-shell {
+    display: flex;
+    flex-direction: column;
+    gap: .85rem;
+    padding-top: .25rem;
+    border-top: 1px solid rgba(128, 90, 213, 0.22);
+  }
+  .tool-review-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .tool-review-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .45rem;
+  }
+  .tool-review-group {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+  }
+  .tool-review-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .tool-review-summary-copy {
+    flex: 1 1 320px;
+  }
+  .tool-review-list {
+    margin: 0;
+  }
+  .tool-review-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: .5rem;
+  }
+  .tool-review-copy {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    min-width: 0;
+  }
+  .tool-review-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
+    flex-wrap: nowrap;
+  }
+  .tool-review-actions {
+    display: contents;
+  }
+  .tool-review-controls .btn-tool-run {
+    white-space: nowrap;
+  }
+  .tool-run-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-color: rgba(168, 85, 247, 0.42);
+    background: linear-gradient(135deg, rgba(44, 24, 75, 0.96), rgba(18, 10, 31, 0.98));
+  }
 
   .tool-header {
     display: flex;
@@ -67,6 +510,23 @@
     gap: .5rem;
   }
   .tool-title { margin: 0; }
+  .tool-presence-dot {
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    margin-left: .45rem;
+    border-radius: 999px;
+    vertical-align: middle;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+  }
+  .tool-presence-dot.present {
+    background: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18), 0 0 10px rgba(34, 197, 94, 0.45);
+  }
+  .tool-presence-dot.missing {
+    background: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18), 0 0 10px rgba(239, 68, 68, 0.35);
+  }
 
   .tool-status {
     font-size: .75rem;
@@ -75,15 +535,17 @@
     letter-spacing: .05em;
     padding: .15rem .4rem;
     border-radius: 3px;
-    background: var(--color-border, #333);
-    color: var(--color-muted, #888);
+    background: rgba(55, 39, 86, 0.94);
+    color: #d2c2f8;
   }
-  .tool-status.running  { background: #2a4a7f; color: #7eb6ff; }
-  .tool-status.done     { background: #1e4a2a; color: #6fcf97; }
+  .tool-status.running  { background: rgba(91, 33, 182, 0.92); color: #eadcff; }
+  .tool-status.stopping { background: rgba(95, 34, 57, 0.92); color: #ffced8; }
+  .tool-status.stopped  { background: rgba(94, 52, 145, 0.92); color: #efdbff; }
+  .tool-status.done     { background: rgba(63, 33, 120, 0.92); color: #e9ddff; }
   .tool-status.error    { background: #5a1e1e; color: #f08080; }
-  .tool-status.busy     { background: #4a3a10; color: #f5c542; }
+  .tool-status.busy     { background: rgba(84, 47, 140, 0.92); color: #eddfff; }
 
-  .tool-desc { margin: 0; font-size: .85rem; color: var(--color-muted, #999); }
+  .tool-desc { margin: 0; font-size: .85rem; color: #b9abdc; }
 
   .tool-actions {
     display: flex;
@@ -91,36 +553,122 @@
     gap: 1rem;
     flex-wrap: wrap;
   }
+  .tool-summary {
+    border: 1px solid rgba(124, 58, 237, 0.28);
+    border-radius: 6px;
+    background: rgba(24, 16, 39, 0.9);
+    padding: .7rem;
+  }
+  .tool-summary-title {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: #aa98d5;
+    margin-bottom: .5rem;
+  }
+  .tool-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: .45rem;
+  }
+  .tool-summary-item {
+    border-radius: 4px;
+    padding: .45rem .5rem;
+    background: rgba(138, 92, 246, 0.08);
+    border: 1px solid rgba(138, 92, 246, 0.16);
+  }
+  .tool-summary-key {
+    display: block;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #aa98d5;
+  }
+  .tool-summary-value {
+    display: block;
+    margin-top: .18rem;
+    font-size: .92rem;
+    font-weight: 700;
+    color: #f3ecff;
+  }
   .limit-row {
     display: flex;
     align-items: center;
     gap: .35rem;
     font-size: .85rem;
   }
-    background: transparent;
-    color: var(--color-accent, #4a8);
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .85rem;
+  }
+  .btn-tool-run {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: .4rem .75rem;
+    border: 1px solid rgba(167, 139, 250, 0.5);
+    background: rgba(42, 25, 74, 0.68);
+    color: #e8d8ff;
     border-radius: 4px;
     cursor: pointer;
     transition: background .15s, color .15s;
+    text-decoration: none;
   }
-  .btn-tool-run:hover:not(:disabled) { background: var(--color-accent, #4a8); color: #fff; }
+  .btn-tool-run:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    border-color: #c4b5fd;
+    color: #fff;
+  }
   .btn-tool-run:disabled { opacity: .45; cursor: not-allowed; }
 
   .tool-log-shell {
-    background: var(--color-surface, #111);
-    border: 1px solid var(--color-border, #333);
+    box-sizing: border-box;
+    background: rgba(8, 5, 16, 0.98);
+    border: 1px solid rgba(126, 87, 194, 0.25);
     border-radius: 4px;
     height: 340px;
+    min-height: 340px;
+    max-height: 340px;
+    min-width: 0;
+    overflow: hidden;
     overflow-y: auto;
     padding: .5rem;
-    flex: 1;
+    flex: 0 0 340px;
   }
   .tool-log-output {
     margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    min-width: 0;
     font-size: .76rem;
     line-height: 1.55;
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: break-word;
+  }
+  .tool-log-line {
+    min-height: 1.15em;
+  }
+  .tool-log-trim {
+    color: #aa98d5;
+    font-style: italic;
+  }
+  .tool-log-progress {
+    color: #d8c2ff;
+    font-weight: 600;
+  }
+  .btn-tool-stop {
+    border-color: rgba(248, 113, 113, 0.58);
+    background: rgba(67, 18, 29, 0.78);
+    color: #fca5a5;
+  }
+  .btn-tool-stop:hover:not(:disabled) {
+    background: #b91c1c;
+    border-color: #ef4444;
+    color: #fff;
   }
   .log-line-fixed  { color: #6fcf97; }
   .log-line-created { color: #7eb6ff; }
@@ -130,82 +678,811 @@
   .log-line-warning { color: #f5c542; font-weight: bold; }
   .log-line-summary { color: #f5c542; font-weight: bold; }
   .log-line-dry    { color: #c9a; font-style: italic; }
+  .tool-report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .9rem;
+  }
+  .report-filter-row {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    margin-top: .9rem;
+    margin-bottom: .9rem;
+  }
+  .report-filter-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: .32rem .55rem;
+    border-radius: 999px;
+    border: 1px solid rgba(124, 58, 237, 0.22);
+    color: #c7b5ec;
+    background: rgba(29, 18, 49, 0.84);
+    text-decoration: none;
+    font-size: .8rem;
+  }
+  .report-filter-pill.active {
+    border-color: #c4b5fd;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.82), rgba(168, 85, 247, 0.82));
+    color: #fff;
+  }
+  .report-shell {
+    height: auto;
+    max-height: 320px;
+  }
+  .report-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: .55rem;
+  }
+  .report-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: .2rem .7rem;
+    align-items: start;
+  }
+  .report-item-path {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #f4edff;
+    word-break: break-all;
+  }
+  .report-item-detail {
+    grid-column: 1 / 2;
+    color: #b9abdc;
+    font-size: .82rem;
+  }
+  .report-item-badge {
+    grid-column: 2 / 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    border: 1px solid rgba(124, 58, 237, 0.22);
+    border-radius: 999px;
+    padding: .2rem .45rem;
+    background: rgba(43, 24, 73, 0.84);
+    color: #eadcff;
+  }
+  .tool-run-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 9, 14, 0.72);
+    backdrop-filter: blur(4px);
+    z-index: 90;
+  }
+  .tool-run-modal {
+    position: fixed;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 920px);
+    max-height: min(86vh, 900px);
+    display: flex;
+    flex-direction: column;
+    gap: .9rem;
+    padding: 1rem;
+    border: 1px solid rgba(168, 85, 247, 0.4);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(18, 12, 32, 0.98), rgba(9, 6, 17, 0.99));
+    box-shadow: 0 28px 80px rgba(5, 2, 12, 0.62);
+    z-index: 91;
+  }
+  .identify-review-backdrop {
+    z-index: 92;
+  }
+  .identify-review-modal {
+    width: min(96vw, 1360px);
+    max-height: min(90vh, 980px);
+    z-index: 93;
+  }
+  .identify-retry-backdrop {
+    z-index: 94;
+  }
+  .identify-retry-modal {
+    width: min(82vw, 980px);
+    max-height: min(70vh, 720px);
+    z-index: 95;
+  }
+  .identify-retry-log-shell {
+    height: min(34vh, 320px);
+    min-height: 180px;
+    max-height: min(34vh, 320px);
+    flex: 0 0 auto;
+  }
+  .identify-retry-output {
+    gap: .5rem;
+  }
+  .identify-retry-message {
+    border-radius: 8px;
+    padding: .75rem .85rem;
+    border: 1px solid rgba(124, 58, 237, 0.24);
+    background: rgba(28, 18, 48, 0.84);
+  }
+  .identify-retry-message.flash-success {
+    border-color: rgba(110, 231, 183, 0.25);
+    background: rgba(18, 52, 43, 0.55);
+  }
+  .identify-retry-message.flash-error {
+    border-color: rgba(248, 113, 113, 0.3);
+    background: rgba(74, 22, 35, 0.7);
+  }
+  .identify-review-copy {
+    margin-top: -.2rem;
+  }
+  .identify-review-log-shell {
+    height: min(64vh, 700px);
+    min-height: 360px;
+    max-height: min(64vh, 700px);
+    flex: 0 0 auto;
+  }
+  .identify-review-layout {
+    display: grid;
+    gap: 1rem;
+  }
+  .tool-run-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .tool-run-modal-title {
+    margin: .15rem 0 0;
+  }
+  .tool-run-modal-log-shell {
+    height: min(48vh, 420px);
+    min-height: 280px;
+    max-height: min(48vh, 420px);
+    flex: 0 0 auto;
+  }
+  .tool-run-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .6rem;
+  }
+  @media (max-width: 720px) {
+    .tool-run-banner,
+    .tool-run-modal-header,
+    .tool-review-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .tool-review-item {
+      grid-template-columns: 1fr;
+    }
+    .tool-review-controls {
+      justify-content: flex-start;
+    }
+    .tool-run-modal {
+      width: calc(100vw - 1rem);
+      max-height: calc(100vh - 1rem);
+      inset: .5rem;
+      transform: none;
+    }
+    .identify-review-modal {
+      width: calc(100vw - 1rem);
+      max-height: calc(100vh - 1rem);
+    }
+    .identify-retry-modal {
+      width: calc(100vw - 1rem);
+      max-height: calc(100vh - 1rem);
+    }
+  }
 </style>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function () {
+  const viewer = window.PlaylistSyncLiveRunViewer;
   const streamBase = {{ url_for('web.tools_stream', tool='PLACEHOLDER') | tojson }}.replace('PLACEHOLDER', '');
+  const statusUrl = {{ url_for('web.tools_status') | tojson }};
+  const stopBase = {{ url_for('web.tools_stop', tool='PLACEHOLDER') | tojson }}.replace('PLACEHOLDER', '');
+  const MAX_LOG_LINES = 120;
+  const pageLinks = Array.from(document.querySelectorAll('a[href]'));
+  const banner = document.getElementById('tool-run-banner');
+  const bannerTitle = document.getElementById('tool-run-banner-title');
+  const bannerCopy = document.getElementById('tool-run-banner-copy');
+  const bannerButton = document.getElementById('tool-run-banner-button');
+  const modal = document.getElementById('tool-run-modal');
+  const modalBackdrop = document.getElementById('tool-run-modal-backdrop');
+  const modalTitle = document.getElementById('tool-run-modal-title');
+  const modalCopy = document.getElementById('tool-run-modal-copy');
+  const modalStatus = document.getElementById('tool-run-modal-status');
+  const modalMeta = document.getElementById('tool-run-modal-meta');
+  const modalMetaGrid = document.getElementById('tool-run-modal-meta-grid');
+  const modalLog = document.getElementById('tool-run-modal-log');
+  const modalStop = document.getElementById('tool-run-modal-stop');
+  const modalClose = document.getElementById('tool-run-modal-close');
+  const identifyReviewModal = document.getElementById('identify-review-modal');
+  const identifyReviewBackdrop = document.getElementById('identify-review-backdrop');
+  const identifyReviewOpen = document.getElementById('open-identify-review-dialog');
+  const identifyReviewClose = document.getElementById('close-identify-review-dialog');
+  const identifyRetryModal = document.getElementById('identify-retry-modal');
+  const identifyRetryBackdrop = document.getElementById('identify-retry-backdrop');
+  const identifyRetryTitle = document.getElementById('identify-retry-title');
+  const identifyRetryStatus = document.getElementById('identify-retry-status');
+  const identifyRetryCopy = document.getElementById('identify-retry-copy');
+  const identifyRetryOutput = document.getElementById('identify-retry-output');
+  const identifyRetryClose = document.getElementById('close-identify-retry-dialog');
+  const pageQuery = new URLSearchParams(window.location.search);
+  const flashStack = document.querySelector('.flash-stack');
+  const state = {
+    currentTool: null,
+    liveSource: null,
+    pollTimer: null,
+    blocking: false,
+    stopping: false,
+    modalPinnedOpen: false,
+    metaTimer: null,
+    latestSnapshot: null,
+  };
 
-  function classify(line) {
-    const l = line.toLowerCase();
-    if (l.startsWith('summary')) return 'log-line-summary';
-    if (l.startsWith('warn') || l.includes('warn:')) return 'log-line-warning';
-    if (l.includes('fixed:') || l.startsWith('  fixed:')) return 'log-line-fixed';
-    if (l.includes('created:') || l.startsWith('  created:')) return 'log-line-created';
-    if (l.includes('deleted:') || l.startsWith('  deleted:')) return 'log-line-deleted';
-    if (l.startsWith('  skip') || l.includes('already correct')) return 'log-line-skip';
-    if (l.includes('error') || l.startsWith('error')) return 'log-line-error';
-    if (l.includes('[dry-run]')) return 'log-line-dry';
-    return '';
+  function formatDuration(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function snapshotElapsedText(snapshot) {
+    const startedAt = snapshot?.started_at ? new Date(snapshot.started_at) : null;
+    if (!startedAt || Number.isNaN(startedAt.getTime())) {
+      return '';
+    }
+    const completedAt = snapshot?.completed_at ? new Date(snapshot.completed_at) : null;
+    const endTime = completedAt && !Number.isNaN(completedAt.getTime()) ? completedAt : new Date();
+    return formatDuration(endTime.getTime() - startedAt.getTime());
+  }
+
+  function updateElapsedMetaValue() {
+    const elapsedValue = modalMetaGrid.querySelector('[data-meta-key="elapsed"] .tool-summary-value');
+    if (!elapsedValue || !state.latestSnapshot) {
+      return;
+    }
+    const nextValue = snapshotElapsedText(state.latestSnapshot);
+    if (nextValue) {
+      elapsedValue.textContent = nextValue;
+    }
+  }
+
+  function stopMetaTimer() {
+    if (!state.metaTimer) return;
+    window.clearInterval(state.metaTimer);
+    state.metaTimer = null;
+  }
+
+  function ensureMetaTimer(snapshot) {
+    stopMetaTimer();
+    if (!snapshot || snapshot.status !== 'running' || !snapshot.started_at) {
+      return;
+    }
+    updateElapsedMetaValue();
+    state.metaTimer = window.setInterval(updateElapsedMetaValue, 1000);
   }
 
   function setStatus(id, state) {
     const el = document.getElementById('status-' + id);
     if (!el) return;
-    el.textContent = state;
-    el.className = 'tool-status ' + state;
+    viewer.setStatusChip(el, state, 'tool-status');
+    const stopButton = document.getElementById('stop-' + id);
+    if (stopButton) {
+      stopButton.disabled = !(state === 'running' || state === 'stopping');
+    }
+  }
+
+  function setModalStatus(status) {
+    viewer.setStatusChip(modalStatus, status, 'tool-status');
+    modalStop.disabled = !(status === 'running' || status === 'stopping');
+  }
+
+  function setPageBlocking(isBlocked) {
+    state.blocking = isBlocked;
+    document.body.classList.toggle('tool-run-locked', false);
+    modalClose.disabled = false;
+    modalClose.textContent = isBlocked ? 'Hide' : 'Close';
+  }
+
+  function openModal() {
+    state.modalPinnedOpen = true;
+    modal.hidden = false;
+    modalBackdrop.hidden = false;
+  }
+
+  function closeModal() {
+    state.modalPinnedOpen = false;
+    modal.hidden = true;
+    modalBackdrop.hidden = true;
+  }
+
+  function openIdentifyReview() {
+    if (!identifyReviewModal || !identifyReviewBackdrop) {
+      return;
+    }
+    identifyReviewModal.hidden = false;
+    identifyReviewBackdrop.hidden = false;
+  }
+
+  function closeIdentifyReview() {
+    if (!identifyReviewModal || !identifyReviewBackdrop) {
+      return;
+    }
+    identifyReviewModal.hidden = true;
+    identifyReviewBackdrop.hidden = true;
+  }
+
+  function openIdentifyRetry() {
+    if (!identifyRetryModal || !identifyRetryBackdrop) {
+      return;
+    }
+    identifyRetryModal.hidden = false;
+    identifyRetryBackdrop.hidden = false;
+  }
+
+  function closeIdentifyRetry() {
+    if (!identifyRetryModal || !identifyRetryBackdrop) {
+      return;
+    }
+    identifyRetryModal.hidden = true;
+    identifyRetryBackdrop.hidden = true;
+  }
+
+  function consumeIdentifyReviewQueryFlag() {
+    if (!pageQuery.has('open_identify_review') && !pageQuery.has('open_identify_retry_result') && !pageQuery.has('identify_retry_path')) {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('open_identify_review');
+    url.searchParams.delete('open_identify_retry_result');
+    url.searchParams.delete('identify_retry_path');
+    window.history.replaceState({}, '', url.toString());
+  }
+
+  function renderIdentifyRetryState({ heading, status, copy, messages }) {
+    if (!identifyRetryOutput || !identifyRetryStatus || !identifyRetryCopy || !identifyRetryTitle) {
+      return;
+    }
+    identifyRetryTitle.textContent = heading;
+    identifyRetryCopy.textContent = copy;
+    viewer.setStatusChip(identifyRetryStatus, status, 'tool-status');
+    identifyRetryOutput.replaceChildren();
+    messages.forEach((message) => {
+      const item = document.createElement('div');
+      item.className = `identify-retry-message ${message.className}`.trim();
+      item.textContent = message.text;
+      identifyRetryOutput.appendChild(item);
+    });
+  }
+
+  function collectFlashMessages() {
+    if (!flashStack) {
+      return [];
+    }
+    return Array.from(flashStack.querySelectorAll('.flash')).map((element) => ({
+      className: element.className,
+      text: element.textContent?.trim() || '',
+    })).filter((item) => item.text);
+  }
+
+  function finishToolRun({ keepModalOpen = false } = {}) {
+    state.stopping = false;
+    setPageBlocking(false);
+    if (keepModalOpen || state.modalPinnedOpen) {
+      openModal();
+    } else {
+      closeModal();
+      stopPolling();
+    }
+  }
+
+  function resetModalMeta() {
+    modalMetaGrid.innerHTML = '';
+    modalMeta.hidden = true;
+  }
+
+  function renderModalMeta(snapshot) {
+    state.latestSnapshot = snapshot;
+    const elapsed = snapshotElapsedText(snapshot);
+    const pairs = [
+      ['mode', snapshot.dry_run ? 'dry-run' : 'live'],
+      ['scope', snapshot.full_scan ? 'full scan' : 'incremental'],
+      ['limit', snapshot.limit ?? 'all'],
+      ['started', snapshot.started_at ? new Date(snapshot.started_at).toLocaleTimeString() : ''],
+      ['completed', snapshot.completed_at ? new Date(snapshot.completed_at).toLocaleTimeString() : ''],
+      ['elapsed', elapsed],
+    ].filter(([, value]) => value !== '' && value !== null && value !== undefined);
+
+    modalMetaGrid.innerHTML = '';
+    pairs.forEach(([key, value]) => {
+      const item = document.createElement('div');
+      item.className = 'tool-summary-item';
+      item.dataset.metaKey = key;
+
+      const keyEl = document.createElement('span');
+      keyEl.className = 'tool-summary-key';
+      keyEl.textContent = key;
+
+      const valueEl = document.createElement('span');
+      valueEl.className = 'tool-summary-value';
+      valueEl.textContent = value;
+
+      item.appendChild(keyEl);
+      item.appendChild(valueEl);
+      modalMetaGrid.appendChild(item);
+    });
+
+    modalMeta.hidden = modalMetaGrid.childElementCount === 0;
+    ensureMetaTimer(snapshot);
+  }
+
+  function renderModalLog(lines) {
+    if (!Array.isArray(lines) || !lines.length) {
+      viewer.resetLog(modalLog);
+      return;
+    }
+    modalLog.replaceChildren();
+    const shell = modalLog.parentElement;
+    lines.forEach((line) => appendLine(modalLog, shell, line));
+    shell.scrollTop = shell.scrollHeight;
+  }
+
+  function renderLogSnapshot(logEl, shell, snapshot) {
+    logEl.replaceChildren();
+    const droppedCount = Number(snapshot?.dropped_line_count || 0);
+    if (droppedCount > 0) {
+      const trimEl = document.createElement('div');
+      trimEl.className = 'tool-log-line tool-log-trim';
+      trimEl.textContent = `Earlier output trimmed (${droppedCount} line${droppedCount === 1 ? '' : 's'} removed).`;
+      logEl.appendChild(trimEl);
+    }
+    const lines = Array.isArray(snapshot?.lines) ? snapshot.lines : [];
+    if (!lines.length) {
+      viewer.resetLog(logEl);
+    } else {
+      lines.forEach((line) => appendLine(logEl, shell, line));
+    }
+    shell.scrollTop = shell.scrollHeight;
+  }
+
+  function showBanner(snapshot) {
+    if (!snapshot || !['running', 'stopping'].includes(snapshot.status)) {
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = false;
+    bannerTitle.textContent = snapshot.status === 'stopping'
+      ? `${snapshot.label} is stopping.`
+      : `${snapshot.label} is running.`;
+    bannerCopy.textContent = snapshot.status === 'stopping'
+      ? 'The stop request was sent. The session log will stay available until the process exits.'
+      : 'Stay on this page while it finishes. Open the status dialog to watch the live session log.';
+    bannerButton.textContent = 'View Status';
+  }
+
+  function applySnapshot(snapshot, { revealModal = false } = {}) {
+    if (!snapshot) {
+      state.latestSnapshot = null;
+      stopMetaTimer();
+      state.currentTool = null;
+      showBanner(null);
+      setPageBlocking(false);
+      closeModal();
+      return;
+    }
+
+    state.currentTool = snapshot.tool;
+    showBanner(snapshot);
+    modalTitle.textContent = snapshot.label || 'Library tool';
+    modalCopy.textContent = ['running', 'stopping'].includes(snapshot.status)
+      ? (snapshot.status === 'stopping'
+          ? 'Stopping the tool now. Navigation stays blocked until the current process exits.'
+          : 'Stay on this page while the tool is running. Navigation is blocked until the current run finishes.')
+      : 'This is the latest session log for the tool run.';
+    setModalStatus(snapshot.status || 'idle');
+    renderModalMeta(snapshot);
+    renderLogSnapshot(modalLog, modalLog.parentElement, snapshot);
+    setPageBlocking(['running', 'stopping'].includes(snapshot.status));
+    if (snapshot.tool) {
+      setStatus(snapshot.tool, snapshot.status || 'idle');
+      const cardLog = document.getElementById('log-' + snapshot.tool);
+      const cardShell = document.getElementById('shell-' + snapshot.tool);
+      if (cardLog && cardShell) {
+        renderLogSnapshot(cardLog, cardShell, snapshot);
+      }
+      if (snapshot.summary_line) {
+        renderSummary(snapshot.tool, snapshot.summary_line);
+      }
+    }
+    if (revealModal || state.modalPinnedOpen || ['running', 'stopping'].includes(snapshot.status)) {
+      openModal();
+    } else if (!['running', 'stopping'].includes(snapshot.status)) {
+      closeModal();
+    }
+  }
+
+  function buildStatusRequestUrl(tool) {
+    const url = new URL(statusUrl, window.location.origin);
+    if (tool) {
+      url.searchParams.set('tool', tool);
+    }
+    return url.toString();
+  }
+
+  async function refreshToolStatus({ revealModal = false, tool = null } = {}) {
+    if (state.liveSource) {
+      return;
+    }
+    try {
+      const response = await fetch(buildStatusRequestUrl(tool), { headers: { 'Accept': 'application/json' } });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const snapshot = tool ? payload.primary : (payload.active ? payload.primary : null);
+      applySnapshot(snapshot, { revealModal });
+    } catch (_error) {
+      // Ignore polling failures; the live event stream remains the primary channel.
+    }
+  }
+
+  function ensurePolling() {
+    if (state.pollTimer) return;
+    state.pollTimer = window.setInterval(() => {
+      if (!state.blocking && modal.hidden && banner.hidden) return;
+      if (state.liveSource) return;
+      refreshToolStatus({ tool: state.currentTool });
+    }, 1500);
+  }
+
+  function stopPolling() {
+    if (!state.pollTimer) return;
+    window.clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+
+  function resetSummary(id) {
+    const box = document.getElementById('summary-' + id);
+    const grid = document.getElementById('summary-grid-' + id);
+    if (!box || !grid) return;
+    grid.innerHTML = '';
+    box.hidden = true;
+  }
+
+  function renderSummary(id, line) {
+    const box = document.getElementById('summary-' + id);
+    const grid = document.getElementById('summary-grid-' + id);
+    viewer.renderSummary(grid, box, line);
+  }
+
+  function isProgressLine(text) {
+    return typeof text === 'string' && text.startsWith('PROGRESS:');
   }
 
   function appendLine(logEl, shell, text) {
-    const cls = classify(text);
-    const safe = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const atBottom = shell.scrollHeight - shell.scrollTop - shell.clientHeight < 50;
-    logEl.innerHTML += (logEl.innerHTML ? '\n' : '') + (cls ? `<span class="${cls}">${safe}</span>` : safe);
-    if (atBottom) shell.scrollTop = shell.scrollHeight;
+    viewer.appendLine(logEl, shell, text, MAX_LOG_LINES);
   }
+
+  async function forceStop(tool) {
+    if (!tool || state.stopping) return;
+    state.stopping = true;
+    try {
+      const response = await fetch(stopBase + tool, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!response.ok) {
+        throw new Error('Stop request failed.');
+      }
+      const payload = await response.json();
+      if (payload.primary) {
+        applySnapshot(payload.primary, { revealModal: true });
+      }
+    } catch (_error) {
+      const targetTool = state.currentTool || tool;
+      const logEl = document.getElementById('log-' + targetTool);
+      const shell = document.getElementById('shell-' + targetTool);
+      if (logEl && shell) {
+        appendLine(logEl, shell, 'ERROR: Could not stop the tool process.');
+      }
+      appendLine(modalLog, modalLog.parentElement, 'ERROR: Could not stop the tool process.');
+      setModalStatus('error');
+    } finally {
+      state.stopping = false;
+    }
+  }
+
+  bannerButton.addEventListener('click', () => {
+    openModal();
+    refreshToolStatus({ revealModal: true, tool: state.currentTool });
+  });
+
+  modalClose.addEventListener('click', () => {
+    closeModal();
+    if (!state.blocking) {
+      stopPolling();
+    }
+  });
+
+  modalStop.addEventListener('click', () => {
+    forceStop(state.currentTool);
+  });
+
+  modalBackdrop.addEventListener('click', () => {
+    closeModal();
+  });
+
+  identifyReviewOpen?.addEventListener('click', () => {
+    openIdentifyReview();
+  });
+
+  identifyReviewClose?.addEventListener('click', () => {
+    closeIdentifyReview();
+  });
+
+  identifyReviewBackdrop?.addEventListener('click', () => {
+    closeIdentifyReview();
+  });
+
+  identifyRetryClose?.addEventListener('click', () => {
+    closeIdentifyRetry();
+  });
+
+  identifyRetryBackdrop?.addEventListener('click', () => {
+    closeIdentifyRetry();
+  });
+
+  document.querySelectorAll('form[action$="/tools/identify-audio/review/retry"]').forEach((form) => {
+    form.addEventListener('submit', () => {
+      const relativePath = form.querySelector('input[name="relative_path"]')?.value || 'selected file';
+      openIdentifyReview();
+      renderIdentifyRetryState({
+        heading: 'Retrying Fingerprint Lookup',
+        status: 'running',
+        copy: `Running a fresh AcoustID lookup for ${relativePath}. This panel will update after the page reloads.`,
+        messages: [{ className: 'flash-success', text: 'Retry lookup in progress...' }],
+      });
+      openIdentifyRetry();
+    });
+  });
+
+  if (pageQuery.get('open_identify_review') === '1') {
+    openIdentifyReview();
+  }
+
+  if (pageQuery.get('open_identify_retry_result') === '1') {
+    const retryPath = pageQuery.get('identify_retry_path') || 'selected file';
+    const messages = collectFlashMessages();
+    if (flashStack) {
+      flashStack.hidden = true;
+    }
+    openIdentifyReview();
+    renderIdentifyRetryState({
+      heading: 'Retry Lookup Result',
+      status: messages.some((item) => item.className.includes('error')) ? 'error' : 'done',
+      copy: `Finished retrying the fingerprint lookup for ${retryPath}. Close this panel to continue reviewing the saved matches.`,
+      messages: messages.length ? messages : [{ className: 'flash-success', text: 'Retry finished.' }],
+    });
+    openIdentifyRetry();
+  }
+
+  if (pageQuery.get('open_identify_review') === '1' || pageQuery.get('open_identify_retry_result') === '1') {
+    consumeIdentifyReviewQueryFlag();
+  }
+
+  window.addEventListener('beforeunload', (event) => {
+    if (!state.blocking) return;
+    event.preventDefault();
+    event.returnValue = 'A library tool is still running.';
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !state.blocking && !modal.hidden) {
+      closeModal();
+      stopPolling();
+    }
+    if (event.key === 'Escape' && identifyReviewModal && !identifyReviewModal.hidden) {
+      closeIdentifyReview();
+    }
+    if (event.key === 'Escape' && identifyRetryModal && !identifyRetryModal.hidden) {
+      closeIdentifyRetry();
+    }
+  });
+
+  refreshToolStatus();
+  ensurePolling();
+
+  document.querySelectorAll('[data-stop-tool]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      forceStop(btn.dataset.stopTool);
+    });
+  });
+
+  document.querySelectorAll('[data-view-tool]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.viewTool;
+      state.currentTool = tool;
+      openModal();
+      ensurePolling();
+      refreshToolStatus({ revealModal: true, tool });
+    });
+  });
 
   document.querySelectorAll('[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => {
       const tool = btn.dataset.tool;
       const dryRun = document.getElementById('dry-' + tool)?.checked ? '1' : '0';
+      const fullScan = document.getElementById('full-' + tool)?.checked ? '1' : '0';
       const limitVal = document.getElementById('limit-' + tool)?.value.trim();
       const logEl  = document.getElementById('log-' + tool);
       const shell  = document.getElementById('shell-' + tool);
 
-      logEl.textContent = '';
+      if (state.liveSource) {
+        state.liveSource.close();
+        state.liveSource = null;
+      }
+
+      state.currentTool = tool;
+      logEl.replaceChildren();
+      resetSummary(tool);
       setStatus(tool, 'running');
+      modalLog.replaceChildren();
+      modalTitle.textContent = btn.closest('.tool-card')?.querySelector('.tool-title')?.textContent || 'Library tool';
+      modalCopy.textContent = 'Stay on this page while the tool is running. Navigation is blocked until the current run finishes.';
+      setModalStatus('running');
+      resetModalMeta();
+      showBanner({ tool, label: modalTitle.textContent, status: 'running' });
+      setPageBlocking(true);
+      openModal();
+      ensurePolling();
       btn.disabled = true;
 
-      let url = streamBase + tool + '?dry_run=' + dryRun;
+      let url = streamBase + tool + '?dry_run=' + dryRun + '&full_scan=' + fullScan;
       if (limitVal && /^\d+$/.test(limitVal)) url += '&limit=' + limitVal;
       const es = new EventSource(url);
+      state.liveSource = es;
 
       es.onmessage = e => {
         const text = e.data;
         if (text.startsWith('__EXIT__')) {
           const code = parseInt(text.replace('__EXIT__', ''), 10);
           es.close();
+          state.liveSource = null;
           btn.disabled = false;
-          setStatus(tool, code === 0 ? 'done' : 'error');
+          finishToolRun({ keepModalOpen: code !== 0 });
+          refreshToolStatus({ revealModal: true, tool });
           return;
         }
         if (text === '__BUSY__') {
           es.close();
+          state.liveSource = null;
           btn.disabled = false;
           setStatus(tool, 'busy');
           appendLine(logEl, shell, 'This tool is already running. Please wait.');
+          refreshToolStatus({ revealModal: true, tool });
           return;
         }
+        if (/^summary\b/i.test(text)) {
+          renderSummary(tool, text);
+        }
         appendLine(logEl, shell, text);
+        appendLine(modalLog, modalLog.parentElement, text);
       };
 
       es.onerror = () => {
         es.close();
+        state.liveSource = null;
         btn.disabled = false;
         setStatus(tool, 'error');
         appendLine(logEl, shell, 'Connection error — check the server logs.');
+        appendLine(modalLog, modalLog.parentElement, 'Connection error — check the server logs.');
+        setModalStatus('error');
+        finishToolRun({ keepModalOpen: true });
+        refreshToolStatus({ revealModal: true, tool });
       };
     });
   });

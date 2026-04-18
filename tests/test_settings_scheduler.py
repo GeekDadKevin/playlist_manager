@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 from app import create_app
 from app.services.playlist_history import record_playlist_run
@@ -43,6 +45,66 @@ def test_settings_page_persists_theme_and_schedule(tmp_path) -> None:
     assert saved["playlist_targets"] == ["weekly exploration", "weekly jams"]
     assert saved["sync_with_downloads"] is True
     assert cron_expression(saved) == "30 7 * * 5"
+
+
+def test_settings_page_uses_config_defaults_for_fallback_toggles(tmp_path) -> None:
+    app = create_app()
+    app.config.update(
+        TESTING=True,
+        DATA_DIR=str(tmp_path),
+        SETTINGS_FILE=str(tmp_path / "settings.json"),
+        SOUNDCLOUD_FALLBACK_ENABLED="0",
+        YOUTUBE_FALLBACK_ENABLED="1",
+        DOWNLOAD_THREADS=3,
+    )
+    (tmp_path / "settings.json").write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+
+    client = app.test_client()
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b'name="soundcloud_fallback" checked' not in response.data
+    assert b'name="youtube_fallback" checked' in response.data
+    assert b'name="download_threads" min="1" max="8" value="3"' in response.data
+
+
+def test_settings_page_can_uncheck_fallback_toggles(tmp_path) -> None:
+    app = create_app()
+    app.config.update(
+        TESTING=True,
+        DATA_DIR=str(tmp_path),
+        SETTINGS_FILE=str(tmp_path / "settings.json"),
+    )
+    save_settings(
+        app.config["SETTINGS_FILE"],
+        {
+            "soundcloud_fallback": True,
+            "youtube_fallback": True,
+            "automation_enabled": True,
+            "sync_with_downloads": True,
+        },
+    )
+
+    client = app.test_client()
+    response = client.post(
+        "/settings",
+        data={
+            "theme": "dark",
+            "schedule_day": "monday",
+            "schedule_time": "06:00",
+            "playlist_targets": "Weekly Exploration, Weekly Jams",
+            "download_threads": "1",
+            "action": "save",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    saved = load_settings(app.config["SETTINGS_FILE"])
+    assert saved["soundcloud_fallback"] is False
+    assert saved["youtube_fallback"] is False
+    assert saved["automation_enabled"] is False
+    assert saved["sync_with_downloads"] is False
 
 
 def test_index_keeps_weekly_targets_visible_even_if_previously_imported(

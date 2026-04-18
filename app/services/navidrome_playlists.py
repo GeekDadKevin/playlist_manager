@@ -314,6 +314,8 @@ def _candidate_library_directories(
     for root in media_roots:
         if not _looks_like_absolute_path(root):
             continue
+        if _is_container_root_alias(root):
+            continue
         root_path = Path(root)
         if not root_path.exists() or not root_path.is_dir():
             continue
@@ -442,6 +444,8 @@ def _path_exists_when_resolved(
         for root in media_roots:
             if not _looks_like_absolute_path(root):
                 continue
+            if _is_container_root_alias(root):
+                continue
             root_path = Path(root)
             if not root_path.exists() or not root_path.is_dir():
                 continue
@@ -455,11 +459,29 @@ def _path_exists_when_resolved(
         if candidate.exists():
             return True
 
-        anchor = candidate.anchor or str(candidate.parent)
-        if anchor and Path(anchor).exists():
+        if _candidate_has_accessible_root(candidate, media_roots):
             has_accessible_root = True
 
     return False if has_accessible_root else None
+
+
+def _candidate_has_accessible_root(candidate: Path, media_roots: list[str]) -> bool:
+    candidate_text = str(candidate).replace("\\", "/").strip()
+    lowered_candidate = candidate_text.casefold()
+
+    for root in media_roots:
+        normalized_root = root.replace("\\", "/").strip().rstrip("/")
+        if not normalized_root:
+            continue
+        lowered_root = normalized_root.casefold()
+        if lowered_candidate == lowered_root or lowered_candidate.startswith(f"{lowered_root}/"):
+            if _is_container_root_alias(root):
+                return False
+            root_path = Path(root)
+            return root_path.exists() and root_path.is_dir()
+
+    anchor = candidate.anchor or str(candidate.parent)
+    return bool(anchor) and Path(anchor).exists()
 
 
 def _path_is_within_root(path_value: Path, root_text: str) -> bool:
@@ -473,10 +495,16 @@ def _path_is_within_root(path_value: Path, root_text: str) -> bool:
 
 def _load_media_path_settings() -> tuple[list[str], str]:
     if has_app_context():
-        roots = [str(current_app.config.get("NAVIDROME_MUSIC_ROOT", "/navidrome/root"))]
+        roots = [
+            str(current_app.config.get("NAVIDROME_MUSIC_ROOT", "/navidrome/root")),
+            "/navidrome/root",
+        ]
         prefix = str(current_app.config.get("NAVIDROME_M3U_PATH_PREFIX", ".."))
     else:
-        roots = [os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root")]
+        roots = [
+            os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root"),
+            "/navidrome/root",
+        ]
         prefix = os.getenv("NAVIDROME_M3U_PATH_PREFIX", "..")
 
     cleaned_roots: list[str] = []
@@ -524,6 +552,11 @@ def _join_media_prefix(prefix: str, relative_path: str) -> str:
 def _looks_like_absolute_path(value: str) -> bool:
     normalized = value.replace("\\", "/").strip()
     return normalized.startswith("/") or bool(re.match(r"^[a-zA-Z]:/", normalized))
+
+
+def _is_container_root_alias(value: str) -> bool:
+    normalized = value.replace("\\", "/").strip().rstrip("/")
+    return normalized.casefold() == "/navidrome/root"
 
 
 def _build_playlist_stem(playlist_name: str) -> tuple[str, bool]:

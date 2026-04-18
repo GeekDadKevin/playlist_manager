@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,8 @@ _DAY_TO_CRON = {
 }
 
 
-def default_settings() -> dict[str, Any]:
-    return {
+def default_settings(default_overrides: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    settings = {
         "theme": "dark",
         "automation_enabled": False,
         "schedule_day": "monday",
@@ -43,11 +44,18 @@ def default_settings() -> dict[str, Any]:
         "last_run_key": "",
         "last_run_results": [],
     }
+    if default_overrides:
+        settings.update(default_overrides)
+    return settings
 
 
-def load_settings(path: str | Path) -> dict[str, Any]:
+def load_settings(
+    path: str | Path,
+    *,
+    default_overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     settings_path = Path(path)
-    defaults = default_settings()
+    defaults = default_settings(default_overrides)
 
     try:
         raw = json.loads(settings_path.read_text(encoding="utf-8"))
@@ -57,20 +65,29 @@ def load_settings(path: str | Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return defaults
 
-    return normalize_settings({**defaults, **raw})
+    return normalize_settings({**defaults, **raw}, default_overrides=default_overrides)
 
 
-def save_settings(path: str | Path, settings: dict[str, Any]) -> dict[str, Any]:
+def save_settings(
+    path: str | Path,
+    settings: dict[str, Any],
+    *,
+    default_overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     settings_path = Path(path)
     settings_path.parent.mkdir(parents=True, exist_ok=True)
 
-    normalized = normalize_settings(settings)
+    normalized = normalize_settings(settings, default_overrides=default_overrides)
     settings_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
     return normalized
 
 
-def normalize_settings(raw: dict[str, Any]) -> dict[str, Any]:
-    settings = default_settings()
+def normalize_settings(
+    raw: dict[str, Any],
+    *,
+    default_overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    settings = default_settings(default_overrides)
 
     theme = str(raw.get("theme", settings["theme"])).strip().lower()
     settings["theme"] = theme if theme in ALLOWED_THEMES else settings["theme"]
@@ -209,3 +226,11 @@ def _normalize_threads(value: Any) -> int:
     except (TypeError, ValueError):
         return 1
     return max(1, min(8, count))
+
+
+def settings_defaults_from_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "soundcloud_fallback": _bool_value(config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")),
+        "youtube_fallback": _bool_value(config.get("YOUTUBE_FALLBACK_ENABLED", "0")),
+        "download_threads": _normalize_threads(config.get("DOWNLOAD_THREADS", 1)),
+    }

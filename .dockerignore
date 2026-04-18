@@ -1,0 +1,14 @@
+.git
+.github
+.pytest_cache
+.ruff_cache
+.venv
+.tools
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+data
+tests
+.app.lock
+config.json

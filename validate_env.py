@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
 
+from env_config import coerce_json_config_values, read_json_config, should_apply_json_config
+
 _ALLOWED_FLASK_ENVS = {"development", "production", "testing"}
 _ALLOWED_DEEZER_QUALITIES = {"FLAC", "MP3_320", "MP3_128"}
 
@@ -106,27 +108,29 @@ def _get_value(values: Mapping[str, object], name: str, default: str = "") -> st
     return str(values.get(name, default)).strip()
 
 
-def _apply_config_json(values: Mapping[str, object]) -> Mapping[str, object]:
-    config_path = Path(__file__).resolve().parent / "config.json"
-    if not config_path.exists():
+def _apply_config_json(
+    values: Mapping[str, object],
+    *,
+    config_path: str | Path | None = None,
+    dockerenv_path: str | Path = "/.dockerenv",
+) -> Mapping[str, object]:
+    if not should_apply_json_config(values, dockerenv_path=dockerenv_path):
         return values
+
+    resolved_config_path = config_path or (Path(__file__).resolve().parent / "config.json")
 
     try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        raw = read_json_config(resolved_config_path)
+    except (OSError, json.JSONDecodeError, TypeError):
         return values
-
-    if not isinstance(raw, dict):
+    if raw is None:
         return values
 
     merged = dict(values)
-    for key, value in raw.items():
-        if value is None:
+    for key, value in coerce_json_config_values(raw).items():
+        if str(merged.get(key, "")).strip():
             continue
-        if isinstance(value, bool):
-            merged[str(key)] = "1" if value else "0"
-        elif isinstance(value, (int, float, str)):
-            merged[str(key)] = str(value)
+        merged[key] = value
     return merged
 
 

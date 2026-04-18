@@ -175,6 +175,72 @@ class ListenBrainzService:
                 "Check the playlist selection or URL."
             ) from exc
 
+    def lookup_recording_metadata(
+        self,
+        *,
+        artist_name: str,
+        recording_name: str,
+        release_name: str = "",
+    ) -> dict[str, Any]:
+        if not self.auth_token:
+            return {}
+
+        artist_name = str(artist_name or "").strip()
+        recording_name = str(recording_name or "").strip()
+        release_name = str(release_name or "").strip()
+        if not artist_name or not recording_name:
+            return {}
+
+        params = {
+            "artist_name": artist_name,
+            "recording_name": recording_name,
+        }
+        if release_name:
+            params["release_name"] = release_name
+
+        with httpx.Client(
+            base_url=self.base_url,
+            follow_redirects=True,
+            timeout=15.0,
+            transport=self.transport,
+        ) as client:
+            response = client.get(
+                "/1/metadata/lookup/",
+                params=params,
+                headers=self._auth_headers(),
+            )
+            response.raise_for_status()
+
+        payload = response.json()
+        return {
+            "recording_mbid": _first_nested_text(
+                payload,
+                "recording_mbid",
+                "musicbrainz_recording_id",
+                "recording_id",
+            ),
+            "release_mbid": _first_nested_text(
+                payload,
+                "release_mbid",
+                "musicbrainz_release_id",
+                "release_id",
+            ),
+        }
+
+    def lookup_recording_mbid(
+        self,
+        *,
+        artist_name: str,
+        recording_name: str,
+        release_name: str = "",
+    ) -> str:
+        metadata = self.lookup_recording_metadata(
+            artist_name=artist_name,
+            recording_name=recording_name,
+            release_name=release_name,
+        )
+        return str(metadata.get("recording_mbid") or "").strip()
+
     def resolve_fetch_url(self, url: str = "") -> str:
         direct_value = url.strip() or self.playlist_id
         api_url = build_listenbrainz_api_url(direct_value, base_url=self.base_url)
@@ -281,3 +347,28 @@ class ListenBrainzService:
         if not self.auth_token:
             return {}
         return {"Authorization": f"Token {self.auth_token}"}
+
+
+def _first_nested_text(payload: Any, *keys: str) -> str:
+    wanted = {key.strip().lower() for key in keys if key.strip()}
+    if not wanted:
+        return ""
+
+    def walk(value: Any) -> str:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if str(key).strip().lower() in wanted:
+                    text = str(nested or "").strip()
+                    if text:
+                        return text
+                found = walk(nested)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for item in value:
+                found = walk(item)
+                if found:
+                    return found
+        return ""
+
+    return walk(payload)

@@ -11,7 +11,7 @@ from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
 from app.services.cover_art import ensure_cover_art, pick_thumbnail_url
 from app.services.musicbrainz import MusicBrainzService
-from app.services.path_template import build_download_path
+from app.services.path_template import apply_audio_extension, build_download_path
 from app.services.song_metadata import extract_musicbrainz_track_id, write_song_metadata_xml
 
 try:  # pragma: no cover - exercised indirectly in runtime environments
@@ -71,7 +71,10 @@ class YouTubeDownloadService:
             download_dir=music_root,
             navidrome_music_root=music_root,
             download_path_template=str(
-                config.get("DOWNLOAD_PATH_TEMPLATE", "{artist}/{album}/{artist} - {track} - {title}")
+                config.get(
+                    "DOWNLOAD_PATH_TEMPLATE",
+                    "{artist}/{album}/{artist} - {track} - {title}",
+                )
             ),
             match_threshold=threshold,
             enabled=enabled,
@@ -180,6 +183,7 @@ class YouTubeDownloadService:
         result["download"] = {
             "provider": "youtube",
             "path": str(file_path),
+            "extension": file_path.suffix,
             "metadata_path": str(metadata_path),
             "completed_at": _utc_timestamp(),
         }
@@ -270,7 +274,7 @@ class YouTubeDownloadService:
         if not output_path.exists():
             raise ValueError("YouTube download finished, but no audio file was written.")
 
-        desired_path = stem_path.with_suffix(output_path.suffix)
+        desired_path = apply_audio_extension(stem_path, output_path.suffix)
         if output_path != desired_path:
             desired_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.replace(desired_path)
@@ -294,6 +298,7 @@ class YouTubeDownloadService:
             provider="youtube",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
             source=link,
+            downloaded_from="youtube",
             annotation=str(info.get("description") or ""),
             timestamp=_utc_timestamp(),
         )

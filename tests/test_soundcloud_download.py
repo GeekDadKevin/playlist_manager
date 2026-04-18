@@ -137,8 +137,10 @@ def test_soundcloud_download_xml_uses_track_artist_and_soundcloud_album_fallback
 
     metadata_xml = Path(result["download"]["metadata_path"]).read_text(encoding="utf-8")
 
+    assert result["download"]["extension"] == ".mp3"
     assert "<performingartist>Massive Attack</performingartist>" in metadata_xml
     assert "<albumtitle>SoundCloud</albumtitle>" in metadata_xml
+    assert "<audioextension>.mp3</audioextension>" in metadata_xml
 
 
 def test_soundcloud_uses_soundcloud_album_when_provider_album_missing(tmp_path) -> None:
@@ -157,3 +159,46 @@ def test_soundcloud_uses_soundcloud_album_when_provider_album_missing(tmp_path) 
     )
 
     assert stem_path == tmp_path / "Massive Attack" / "SoundCloud" / "Teardrop"
+
+
+def test_soundcloud_download_preserves_dotted_title_before_audio_extension(tmp_path) -> None:
+    payload = {"entries": []}
+
+    class DownloadYDL(StubYDL):
+        def extract_info(self, url: str, download: bool = False):
+            if not download:
+                raise AssertionError(f"Unexpected yt-dlp request: {url!r}, download={download}")
+
+            filepath = self.opts["outtmpl"]["default"].replace("%(ext)s", "mp3")
+            Path(filepath).write_text("fake audio", encoding="utf-8")
+            return {
+                "filepath": filepath,
+                "ext": "mp3",
+                "artist": "Massive Attack",
+                "uploader": "Massive Attack",
+                "album": "SoundCloud",
+                "playlist_title": "",
+                "title": "Track.Name",
+            }
+
+    service = SoundCloudDownloadService(
+        download_dir=str(tmp_path),
+        extractor_factory=lambda opts: DownloadYDL(opts, payload),
+    )
+
+    result = service.resolve_track_selection(
+        PlaylistTrack(title="Track.Name", artist="Massive Attack", album="Mezzanine"),
+        {
+            "title": "Track.Name",
+            "artist": "Massive Attack",
+            "album": "SoundCloud",
+            "link": "https://soundcloud.com/demo/track-name",
+            "provider": "soundcloud",
+        },
+    )
+
+    output_path = Path(result["download"]["path"])
+
+    assert output_path.name == "Massive Attack - 0 - Track.Name.mp3"
+    assert result["download"]["extension"] == ".mp3"
+    assert output_path.exists()

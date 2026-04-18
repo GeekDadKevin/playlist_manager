@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import time
 import logging
 import re
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,10 +16,14 @@ from app.matching import rank_candidates
 from app.matching.normalize import build_search_queries, normalize_text
 from app.models import PlaylistTrack
 from app.services.cover_art import ensure_cover_art
+from app.services.listenbrainz import ListenBrainzService
 from app.services.musicbrainz import MusicBrainzService
 from app.services.path_template import build_download_path
-from app.services.song_metadata import write_flac_tags, write_song_metadata_xml
-from app.services.song_metadata import extract_musicbrainz_track_id
+from app.services.song_metadata import (
+    extract_musicbrainz_track_id,
+    write_flac_tags,
+    write_song_metadata_xml,
+)
 from app.services.soundcloud_download import SoundCloudDownloadService
 from app.services.youtube_download import YouTubeDownloadService
 
@@ -48,6 +52,7 @@ class DeezerDownloadService:
         soundcloud_service: SoundCloudDownloadService | None = None,
         youtube_service: YouTubeDownloadService | None = None,
         musicbrainz_service: MusicBrainzService | None = None,
+        listenbrainz_service: ListenBrainzService | None = None,
         download_threads: int = 1,
     ) -> None:
         self.arl = arl.strip()
@@ -60,6 +65,7 @@ class DeezerDownloadService:
         self.soundcloud_service = soundcloud_service
         self.youtube_service = youtube_service
         self.musicbrainz_service = musicbrainz_service
+        self.listenbrainz_service = listenbrainz_service
         self.download_threads = max(int(download_threads), 1)
         self._api_token = ""
         self._license_token = ""
@@ -71,18 +77,23 @@ class DeezerDownloadService:
         soundcloud_service = SoundCloudDownloadService.from_config(config)
         youtube_service = YouTubeDownloadService.from_config(config)
         musicbrainz_service = MusicBrainzService.from_config(config)
+        listenbrainz_service = ListenBrainzService.from_config(config)
         return cls(
             arl=str(config.get("DEEZER_ARL", "")),
             download_dir=music_root,
             navidrome_music_root=music_root,
             download_path_template=str(
-                config.get("DOWNLOAD_PATH_TEMPLATE", "{artist}/{album}/{artist} - {track} - {title}")
+                config.get(
+                    "DOWNLOAD_PATH_TEMPLATE",
+                    "{artist}/{album}/{artist} - {track} - {title}",
+                )
             ),
             quality=str(config.get("DEEZER_QUALITY", "FLAC")),
             match_threshold=float(config.get("DEEZER_MATCH_THRESHOLD", 72.0)),
             soundcloud_service=soundcloud_service,
             youtube_service=youtube_service,
             musicbrainz_service=musicbrainz_service,
+            listenbrainz_service=listenbrainz_service,
             download_threads=int(config.get("DOWNLOAD_THREADS", 1) or 1),
         )
 
@@ -447,8 +458,9 @@ class DeezerDownloadService:
         *,
         download_progress: Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None = None,
     ) -> dict[str, Any]:
+        resolved_recording_mbid = self._ensure_musicbrainz_recording_id(track, match)
         updated_track_number = self._ensure_track_number(track, match)
-        if updated_track_number:
+        if resolved_recording_mbid or updated_track_number:
             result["track"] = track.to_dict()
         deezer_id = match.get("deezer_id")
         if not deezer_id:
@@ -492,6 +504,7 @@ class DeezerDownloadService:
             "provider": "deezer",
             "deezer_id": deezer_id,
             "path": str(file_path),
+            "extension": file_path.suffix,
             "metadata_path": str(metadata_path),
             "completed_at": _utc_timestamp(),
         }
@@ -544,6 +557,7 @@ class DeezerDownloadService:
             soundcloud_service=self.soundcloud_service,
             youtube_service=self.youtube_service,
             musicbrainz_service=self.musicbrainz_service,
+            listenbrainz_service=self.listenbrainz_service,
             download_threads=1,
         )
 
@@ -818,6 +832,7 @@ class DeezerDownloadService:
         fmt: str,
     ) -> Path:
         annotation = str(track.extra.get("annotation", "")) if isinstance(track.extra, dict) else ""
+        recording_mbid, _release_mbid = self._musicbrainz_ids_from_track(track)
         return write_song_metadata_xml(
             audio_path,
             title=str(match.get("title", "") or track.title or audio_path.stem),
@@ -832,6 +847,8 @@ class DeezerDownloadService:
             deezer_link=str(match.get("link", "")),
             quality=str(fmt or self.quality),
             source=str(track.source or ""),
+            downloaded_from="deezer",
+            musicbrainz_track_id=recording_mbid,
             annotation=annotation,
             timestamp=_utc_timestamp(),
         )
@@ -846,6 +863,7 @@ class DeezerDownloadService:
         fmt: str,
     ) -> Path:
         annotation = str(track.extra.get("annotation", "")) if isinstance(track.extra, dict) else ""
+        recording_mbid, _release_mbid = self._musicbrainz_ids_from_track(track)
         return write_flac_tags(
             audio_path,
             title=str(match.get("title", "") or track.title or audio_path.stem),
@@ -859,6 +877,7 @@ class DeezerDownloadService:
             deezer_album_id=match.get("album_id"),
             deezer_link=str(match.get("link", "")),
             source=str(track.source or ""),
+            musicbrainz_track_id=recording_mbid,
             annotation=annotation,
             quality=str(fmt or self.quality),
         )
@@ -941,11 +960,7 @@ class DeezerDownloadService:
         if service is None:
             return None
 
-        extra = track.extra if isinstance(track.extra, dict) else {}
-        recording_mbid = str(extra.get("musicbrainz_recording_id") or "").strip()
-        if not recording_mbid:
-            recording_mbid = extract_musicbrainz_track_id(str(track.source or ""))
-        release_mbid = str(extra.get("musicbrainz_release_id") or "").strip()
+        recording_mbid, release_mbid = self._musicbrainz_ids_from_track(track)
         album_name = str(match.get("album") or track.album or "").strip()
         artist_name = str(match.get("artist") or track.artist or "").strip()
 
@@ -958,6 +973,88 @@ class DeezerDownloadService:
         if resolved:
             track.track_number = resolved
         return resolved
+
+    def _ensure_musicbrainz_recording_id(
+        self,
+        track: PlaylistTrack,
+        match: dict[str, Any],
+    ) -> str:
+        recording_mbid, release_mbid = self._musicbrainz_ids_from_track(track)
+        if recording_mbid:
+            return recording_mbid
+
+        title = str(match.get("title") or track.title or "").strip()
+        artist_name = str(match.get("artist") or track.artist or "").strip()
+        album_name = str(match.get("album") or track.album or "").strip()
+        label = self._format_track_label(track, match)
+
+        extra = track.extra if isinstance(track.extra, dict) else {}
+        if not isinstance(track.extra, dict):
+            track.extra = extra
+
+        listenbrainz_service = self.listenbrainz_service
+        if listenbrainz_service is not None:
+            try:
+                listenbrainz_metadata = listenbrainz_service.lookup_recording_metadata(
+                    artist_name=artist_name,
+                    recording_name=title,
+                    release_name=album_name,
+                )
+            except Exception as exc:
+                log.warning("ListenBrainz recording lookup failed for %s: %s", label, exc)
+            else:
+                recording_mbid = str(listenbrainz_metadata.get("recording_mbid") or "").strip()
+                if recording_mbid:
+                    extra["musicbrainz_recording_id"] = recording_mbid
+                    if not release_mbid:
+                        release_mbid = str(listenbrainz_metadata.get("release_mbid") or "").strip()
+                        if release_mbid:
+                            extra["musicbrainz_release_id"] = release_mbid
+                    log.info(
+                        "Resolved MusicBrainz recording ID via ListenBrainz for %s: %s",
+                        label,
+                        recording_mbid,
+                    )
+                    return recording_mbid
+
+        musicbrainz_service = self.musicbrainz_service
+        if musicbrainz_service is not None:
+            try:
+                recording_mbid = musicbrainz_service.lookup_recording_mbid(
+                    title=title,
+                    artist_name=artist_name,
+                    album_name=album_name,
+                )
+            except Exception as exc:
+                log.warning("MusicBrainz recording lookup failed for %s: %s", label, exc)
+            else:
+                if recording_mbid:
+                    extra["musicbrainz_recording_id"] = recording_mbid
+                    log.info(
+                        "Resolved MusicBrainz recording ID via MusicBrainz for %s: %s",
+                        label,
+                        recording_mbid,
+                    )
+                    return recording_mbid
+
+        log.warning(
+            "No MusicBrainz recording ID found for %s after Deezer, "
+            "ListenBrainz, and MusicBrainz lookup.",
+            label,
+        )
+        return ""
+
+    def _musicbrainz_ids_from_track(self, track: PlaylistTrack) -> tuple[str, str]:
+        extra = track.extra if isinstance(track.extra, dict) else {}
+        recording_mbid = str(extra.get("musicbrainz_recording_id") or "").strip()
+        if not recording_mbid:
+            recording_mbid = extract_musicbrainz_track_id(str(track.source or ""))
+            if recording_mbid:
+                extra["musicbrainz_recording_id"] = recording_mbid
+                if not isinstance(track.extra, dict):
+                    track.extra = extra
+        release_mbid = str(extra.get("musicbrainz_release_id") or "").strip()
+        return recording_mbid, release_mbid
 
     def _format_track_label(self, track: PlaylistTrack, match: dict[str, Any]) -> str:
         artist = str(match.get("artist") or track.artist or "").strip()

@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>fpcalc</id>
+    <version>1.5.1</version>
+    <title>fpcalc</title>
+    <authors>Lukáš Lalinský &amp; AcoustID</authors>
+    <owners>Starz0r</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <licenseUrl>https://github.com/acoustid/chromaprint/blob/v1.5.1/LICENSE.md</licenseUrl>
+    <projectUrl>https://acoustid.org/chromaprint</projectUrl>
+    <iconUrl>https://avatars.githubusercontent.com/u/19508937</iconUrl>
+    <description>fpcalc is a utility for generating fingerprints from audio sources programatically. It can produce JSON output, which should be easy to parse in any language. This is the recommended way to use Chromaprint if all you need is generate fingerprints for AcoustID.</description>
+    <summary>Generate audio fingerprints from the terminal.</summary>
+    <releaseNotes>- No functional source code changes.
+
+ - Fixed some compiler warnings.
+
+ - Rebuilt the fpcalc binaries with FFmpeg 4.4.1.
+
+ - Added support for fat binaries on macOS, with support for both Intel and Apple silicon.</releaseNotes>
+    <copyright>Copyright © 2010 - 2023, Lukáš Lalinský</copyright>
+    <tags>fpcalc chromaprint acoustid oss foss cli audio fingerprint fingerprinting sound music</tags>
+    <projectSourceUrl>https://github.com/acoustid/chromaprint/tree/v1.5.1</projectSourceUrl>
+    <packageSourceUrl>https://github.com/Starz0r/ChocolateyPackagingScripts</packageSourceUrl>
+    <docsUrl>https://github.com/acoustid/chromaprint/blob/v1.5.1/README.md</docsUrl>
+    <bugTrackerUrl>https://github.com/acoustid/chromaprint/issues</bugTrackerUrl>
+  </metadata>
+</package>

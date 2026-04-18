@@ -1,0 +1,577 @@
+{% extends "base.html" %}
+{% block title %}Catalog{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="catalog-hero">
+    <div>
+      <h2 style="margin:0;">Track Catalog</h2>
+      <p class="catalog-copy">
+        Review indexed tracks, filter anomaly types, and run maintenance actions against an explicit batch selection.
+      </p>
+    </div>
+    <div class="catalog-root">
+      <span class="catalog-label">Music Root</span>
+      <code>{{ music_root or "(not configured)" }}</code>
+    </div>
+  </div>
+  {% if not music_root %}
+  <p class="flash flash-error" style="margin-top:1rem;">
+    <strong>NAVIDROME_MUSIC_ROOT</strong> is not set. Configure it in <code>.env</code> before using the catalog page.
+  </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="catalog-summary-grid">
+    {% for filter_id, filter_label in filter_options %}
+    <a class="catalog-summary-item{% if listing.filter == filter_id %} is-active{% endif %}"
+       href="{{ url_for('web.catalog_page', issue_filter=filter_id, search=search, sort_by=sort_by, sort_dir=sort_dir, per_page=per_page) }}">
+      <span class="catalog-summary-key">{{ filter_label }}</span>
+      <span class="catalog-summary-value">{{ filter_counts.get(filter_id, 0) }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if last_batch %}
+<section class="card">
+  <div class="catalog-batch-header">
+    <div>
+      <div class="catalog-label">Last Batch Result</div>
+      <h3 style="margin:.2rem 0 0 0;">{{ last_batch.label }}</h3>
+    </div>
+    <span class="catalog-batch-status {% if last_batch.exit_code %}is-error{% else %}is-ok{% endif %}">
+      {% if last_batch.exit_code %}error{% else %}ok{% endif %}
+    </span>
+  </div>
+  <p class="catalog-copy">{{ last_batch.summary_line }}</p>
+  {% if last_batch.lines %}
+  <div class="catalog-log-shell">
+    <pre class="catalog-log-output">{% for line in last_batch.lines %}{{ line }}
+{% endfor %}</pre>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card" id="catalog-live-run" hidden>
+  <div class="catalog-batch-header">
+    <div>
+      <div class="catalog-label">Live Batch</div>
+      <h3 style="margin:.2rem 0 0 0;" id="catalog-live-title">Catalog Batch</h3>
+    </div>
+    <span class="catalog-batch-status" id="catalog-live-status">idle</span>
+  </div>
+  <p class="catalog-copy" id="catalog-live-summary">Waiting for batch output.</p>
+  <div class="catalog-log-shell">
+    <pre class="catalog-log-output" id="catalog-live-log">Waiting for batch output.</pre>
+  </div>
+  <div class="catalog-batch-controls" style="margin-top:1rem; justify-content:flex-end;">
+    <button type="button" class="btn-tool-run btn-tool-stop" id="catalog-live-stop" disabled>Force Stop</button>
+    <button type="button" class="btn-tool-run" id="catalog-live-refresh" disabled>Refresh Page</button>
+  </div>
+</section>
+
+<section class="card">
+  <form class="catalog-toolbar" method="get" action="{{ url_for('web.catalog_page') }}">
+    <input type="hidden" name="issue_filter" value="{{ listing.filter }}">
+    <label>
+      <span>Search</span>
+      <input type="text" name="search" value="{{ search }}" placeholder="path, title, artist, album">
+    </label>
+    <label>
+      <span>Sort By</span>
+      <select name="sort_by">
+        <option value="path" {% if listing.sort_by == 'path' %}selected{% endif %}>Path</option>
+        <option value="artist" {% if listing.sort_by == 'artist' %}selected{% endif %}>Artist</option>
+        <option value="album" {% if listing.sort_by == 'album' %}selected{% endif %}>Album</option>
+        <option value="source" {% if listing.sort_by == 'source' %}selected{% endif %}>Source</option>
+        <option value="integrity" {% if listing.sort_by == 'integrity' %}selected{% endif %}>Integrity</option>
+        <option value="updated" {% if listing.sort_by == 'updated' %}selected{% endif %}>Updated</option>
+      </select>
+    </label>
+    <label>
+      <span>Direction</span>
+      <select name="sort_dir">
+        <option value="asc" {% if listing.sort_dir == 'asc' %}selected{% endif %}>Ascending</option>
+        <option value="desc" {% if listing.sort_dir == 'desc' %}selected{% endif %}>Descending</option>
+      </select>
+    </label>
+    <label>
+      <span>Rows</span>
+      <select name="per_page">
+        <option value="25" selected>25</option>
+      </select>
+    </label>
+    <button class="btn-tool-run" type="submit">Apply</button>
+  </form>
+</section>
+
+<section class="card">
+  <form method="post" action="{{ url_for('web.catalog_batch_action') }}" id="catalog-batch-form">
+    <input type="hidden" name="return_query" value="{{ request.query_string.decode('utf-8') }}">
+    <div class="catalog-batch-toolbar">
+      <div>
+        <div class="catalog-label">Batch Actions</div>
+        <p class="catalog-copy" style="margin:.2rem 0 0 0;">
+          Selected rows on this page can be sent through maintenance tools without touching the rest of the library.
+          Batch runs are currently limited to the 25 tracks shown on the current page.
+        </p>
+      </div>
+      <div class="catalog-batch-controls">
+        <label>
+          <span>Action</span>
+          <select name="action">
+            {% for action_id, action_label in batch_actions %}
+            <option value="{{ action_id }}">{{ action_label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="dry_run">
+          <span>Dry run</span>
+        </label>
+        <button type="button" class="btn-tool-run" id="catalog-select-visible">Select Visible</button>
+        <button type="button" class="btn-tool-run" id="catalog-clear-selection">Clear</button>
+        <button type="submit" class="btn-tool-run" id="catalog-run-selected">Run On Selected</button>
+      </div>
+    </div>
+
+    <div class="catalog-selection-row">
+      <span id="catalog-selection-count">0 selected</span>
+      <span class="catalog-copy">{{ listing.total }} matching track(s) in this filter.</span>
+    </div>
+
+    <div class="catalog-table-shell">
+      <table class="catalog-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="catalog-select-all"></th>
+            <th>Track</th>
+            <th>Path</th>
+            <th>Source</th>
+            <th>Integrity</th>
+            <th>MusicBrainz</th>
+            <th>Anomalies</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in listing["items"] %}
+          <tr>
+            <td>
+              <input type="checkbox" name="selected_paths" value="{{ item.relative_path }}" class="catalog-row-check">
+            </td>
+            <td>
+              <div class="catalog-track-title">{{ item.title or "(missing title)" }}</div>
+              <div class="catalog-track-meta">
+                {{ item.artist or "(missing artist)" }}
+                {% if item.album %} · {{ item.album }}{% endif %}
+                {% if item.track_number %} · #{{ item.track_number }}{% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="catalog-path">{{ item.relative_path }}</div>
+              <div class="catalog-track-meta">Updated {{ item.updated_at or "unknown" }}</div>
+            </td>
+            <td>
+              <span class="catalog-pill">{{ item.source }}</span>
+            </td>
+            <td>
+              <span class="catalog-integrity catalog-integrity-{{ item.integrity_status|replace('_', '-') }}">
+                {{ item.integrity_status }}
+              </span>
+              {% if item.integrity_message %}
+              <div class="catalog-track-meta">{{ item.integrity_message }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="catalog-pill catalog-pill-{{ item.musicbrainz_tone }}">
+                {{ item.musicbrainz_label }}
+              </span>
+              <div class="catalog-track-meta">{{ item.musicbrainz_detail }}</div>
+            </td>
+            <td>
+              <div class="catalog-badges">
+                {% for anomaly in item.anomalies %}
+                <span class="catalog-badge catalog-badge-{{ anomaly.tone }}" title="{{ anomaly.detail }}">
+                  {{ anomaly.label }}
+                </span>
+                {% endfor %}
+                {% if not item.anomalies %}
+                <span class="catalog-badge catalog-badge-ok">Clean</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="catalog-empty">No tracks match the current filter.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+
+  <div class="catalog-pagination">
+    <a class="btn-tool-run {% if listing.page <= 1 %}is-disabled{% endif %}"
+       {% if listing.page > 1 %}href="{{ url_for('web.catalog_page', issue_filter=listing.filter, search=search, sort_by=listing.sort_by, sort_dir=listing.sort_dir, per_page=listing.per_page, page=listing.page - 1) }}"{% endif %}>
+      Previous
+    </a>
+    <span>Page {{ listing.page }} of {{ listing.pages }}</span>
+    <a class="btn-tool-run {% if listing.page >= listing.pages %}is-disabled{% endif %}"
+       {% if listing.page < listing.pages %}href="{{ url_for('web.catalog_page', issue_filter=listing.filter, search=search, sort_by=listing.sort_by, sort_dir=listing.sort_dir, per_page=listing.per_page, page=listing.page + 1) }}"{% endif %}>
+      Next
+    </a>
+  </div>
+</section>
+
+<style>
+.catalog-hero,
+.catalog-batch-header,
+.catalog-batch-toolbar,
+.catalog-selection-row,
+.catalog-pagination {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+.catalog-copy { margin:.35rem 0 0 0; color:var(--app-text-muted); }
+.catalog-root { text-align:right; }
+.catalog-label {
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  color:#aa98d5;
+}
+.catalog-summary-grid {
+  display:grid;
+  gap:.8rem;
+  grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
+}
+.catalog-summary-item {
+  display:block;
+  text-decoration:none;
+  color:inherit;
+  border:1px solid rgba(138, 92, 246, 0.2);
+  border-radius:10px;
+  padding:.8rem .9rem;
+  background:rgba(138, 92, 246, 0.06);
+}
+.catalog-summary-item.is-active {
+  border-color:rgba(192, 132, 252, 0.65);
+  background:rgba(138, 92, 246, 0.18);
+}
+.catalog-summary-key { display:block; font-size:.8rem; color:var(--app-text-muted); }
+.catalog-summary-value { display:block; margin-top:.3rem; font-size:1.4rem; font-weight:800; }
+.catalog-toolbar,
+.catalog-batch-controls {
+  display:flex;
+  gap:.8rem;
+  flex-wrap:wrap;
+  align-items:end;
+}
+.catalog-toolbar label,
+.catalog-batch-controls label {
+  min-width:140px;
+}
+.catalog-toolbar input,
+.catalog-toolbar select,
+.catalog-batch-controls select {
+  width:100%;
+}
+.catalog-table-shell,
+.catalog-log-shell {
+  margin-top:1rem;
+  border:1px solid rgba(126, 87, 194, 0.25);
+  border-radius:8px;
+  background:rgba(8, 5, 16, 0.98);
+  overflow:auto;
+}
+.catalog-table {
+  width:100%;
+  border-collapse:collapse;
+  min-width:960px;
+}
+.catalog-table th,
+.catalog-table td {
+  padding:.75rem;
+  border-bottom:1px solid rgba(126, 87, 194, 0.18);
+  vertical-align:top;
+}
+.catalog-table th {
+  position:sticky;
+  top:0;
+  background:rgba(17, 10, 30, 0.98);
+  text-align:left;
+}
+.catalog-track-title { font-weight:700; }
+.catalog-track-meta,
+.catalog-path { font-size:.84rem; color:var(--app-text-muted); }
+.catalog-badges { display:flex; gap:.35rem; flex-wrap:wrap; }
+.catalog-badge,
+.catalog-pill,
+.catalog-integrity,
+.catalog-batch-status {
+  display:inline-flex;
+  align-items:center;
+  padding:.24rem .5rem;
+  border-radius:999px;
+  font-size:.74rem;
+  font-weight:700;
+  border:1px solid rgba(138, 92, 246, 0.24);
+  background:rgba(138, 92, 246, 0.08);
+}
+.catalog-badge-warning,
+.catalog-integrity-warning { background:rgba(217, 119, 6, 0.16); border-color:rgba(217, 119, 6, 0.3); color:#fdba74; }
+.catalog-badge-error,
+.catalog-integrity-error,
+.catalog-batch-status.is-error { background:rgba(127, 29, 29, 0.45); border-color:rgba(248, 113, 113, 0.4); color:#fca5a5; }
+.catalog-badge-muted,
+.catalog-integrity-unchecked,
+.catalog-pill-muted { background:rgba(71, 85, 105, 0.3); border-color:rgba(148, 163, 184, 0.3); color:#cbd5e1; }
+.catalog-badge-ok,
+.catalog-integrity-ok,
+.catalog-batch-status.is-ok,
+.catalog-pill-ok { background:rgba(34, 197, 94, 0.12); border-color:rgba(34, 197, 94, 0.28); color:#86efac; }
+.catalog-pill-warning { background:rgba(217, 119, 6, 0.16); border-color:rgba(217, 119, 6, 0.3); color:#fdba74; }
+.catalog-batch-status.is-running { background:rgba(91, 33, 182, 0.22); border-color:rgba(168, 85, 247, 0.42); color:#eadcff; }
+.btn-tool-stop {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(67, 18, 29, 0.78);
+  color: #fca5a5;
+}
+.catalog-empty { text-align:center; color:var(--app-text-muted); }
+.catalog-log-output {
+  margin:0;
+  padding:.8rem;
+  font-size:.76rem;
+  line-height:1.5;
+  white-space:pre-wrap;
+}
+.btn-tool-run.is-disabled {
+  opacity:.45;
+  pointer-events:none;
+}
+@media (max-width: 900px) {
+  .catalog-hero,
+  .catalog-batch-header,
+  .catalog-batch-toolbar,
+  .catalog-selection-row,
+  .catalog-pagination {
+    flex-direction:column;
+    align-items:stretch;
+  }
+  .catalog-root { text-align:left; }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const viewer = window.PlaylistSyncLiveRunViewer;
+  const startUrl = {{ url_for('web.catalog_batch_start') | tojson }};
+  const statusUrl = {{ url_for('web.catalog_batch_status') | tojson }};
+  const stopUrl = {{ url_for('web.catalog_batch_stop') | tojson }};
+  const form = document.getElementById("catalog-batch-form");
+  const liveCard = document.getElementById("catalog-live-run");
+  const liveTitle = document.getElementById("catalog-live-title");
+  const liveStatus = document.getElementById("catalog-live-status");
+  const liveSummary = document.getElementById("catalog-live-summary");
+  const liveLog = document.getElementById("catalog-live-log");
+  const liveStop = document.getElementById("catalog-live-stop");
+  const liveRefresh = document.getElementById("catalog-live-refresh");
+  const runSelected = document.getElementById("catalog-run-selected");
+  const selectAll = document.getElementById("catalog-select-all");
+  const selectVisible = document.getElementById("catalog-select-visible");
+  const clearSelection = document.getElementById("catalog-clear-selection");
+  const rowChecks = Array.from(document.querySelectorAll(".catalog-row-check"));
+  const countNode = document.getElementById("catalog-selection-count");
+  let liveSource = null;
+
+  const setLiveStatus = (status) => {
+    viewer.setStatusChip(liveStatus, status || "idle", "catalog-batch-status");
+  };
+
+  const renderSnapshot = (snapshot) => {
+    if (!snapshot) {
+      liveCard.hidden = true;
+      liveStop.disabled = true;
+      liveRefresh.disabled = false;
+      runSelected.disabled = false;
+      return;
+    }
+    liveCard.hidden = false;
+    liveTitle.textContent = snapshot.label || "Catalog Batch";
+    setLiveStatus(snapshot.status || "idle");
+    liveSummary.textContent = snapshot.summary_line || snapshot.description || "Running catalog batch.";
+    const lines = Array.isArray(snapshot.lines) ? snapshot.lines : [];
+    viewer.resetLog(liveLog);
+    if (lines.length) {
+      liveLog.replaceChildren();
+      lines.forEach((line) => viewer.appendLine(liveLog, liveLog.parentElement, line));
+      liveLog.parentElement.scrollTop = liveLog.parentElement.scrollHeight;
+    }
+    const active = ["running", "stopping"].includes(snapshot.status);
+    liveStop.disabled = !active;
+    liveRefresh.disabled = active;
+    runSelected.disabled = active;
+    if (!active && liveSource) {
+      liveSource.close();
+      liveSource = null;
+    }
+  };
+
+  const refreshStatus = async () => {
+    try {
+      const response = await fetch(statusUrl, { headers: { Accept: "application/json" } });
+      if (!response.ok) return;
+      const payload = await response.json();
+      renderSnapshot(payload.primary);
+      return payload.primary;
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  const connectStream = (streamUrl) => {
+    if (!streamUrl) return;
+    if (liveSource) {
+      liveSource.close();
+    }
+    liveSource = new EventSource(streamUrl);
+    liveSource.onmessage = async (event) => {
+      const text = String(event.data || "");
+      if (text === "__RESET__") {
+        viewer.resetLog(liveLog);
+        return;
+      }
+      if (text.startsWith("__EXIT__")) {
+        liveSource.close();
+        liveSource = null;
+        await refreshStatus();
+        return;
+      }
+      if (liveLog.textContent === "Waiting for batch output.") {
+        liveLog.replaceChildren();
+      }
+      viewer.appendLine(liveLog, liveLog.parentElement, text);
+      if (text.toLowerCase().startsWith("summary")) {
+        liveSummary.textContent = text;
+      }
+    };
+    liveSource.onerror = async () => {
+      if (liveSource) {
+        liveSource.close();
+        liveSource = null;
+      }
+      await refreshStatus();
+    };
+  };
+
+  const updateCount = () => {
+    const selected = rowChecks.filter((node) => node.checked).length;
+    countNode.textContent = `${selected} selected`;
+    if (selectAll) {
+      selectAll.checked = selected > 0 && selected === rowChecks.length;
+      selectAll.indeterminate = selected > 0 && selected < rowChecks.length;
+    }
+  };
+
+  for (const checkbox of rowChecks) {
+    checkbox.addEventListener("change", updateCount);
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener("change", () => {
+      for (const checkbox of rowChecks) {
+        checkbox.checked = selectAll.checked;
+      }
+      updateCount();
+    });
+  }
+
+  if (selectVisible) {
+    selectVisible.addEventListener("click", () => {
+      for (const checkbox of rowChecks) {
+        checkbox.checked = true;
+      }
+      updateCount();
+    });
+  }
+
+  if (clearSelection) {
+    clearSelection.addEventListener("click", () => {
+      for (const checkbox of rowChecks) {
+        checkbox.checked = false;
+      }
+      updateCount();
+    });
+  }
+
+  if (liveRefresh) {
+    liveRefresh.addEventListener("click", () => {
+      window.location.reload();
+    });
+  }
+
+  if (liveStop) {
+    liveStop.addEventListener("click", async () => {
+      try {
+        await fetch(stopUrl, { method: "POST", headers: { Accept: "application/json" } });
+      } catch (_error) {
+        // Ignore stop errors; polling will show the final state.
+      }
+      refreshStatus();
+    });
+  }
+
+  if (form) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const selected = rowChecks.filter((node) => node.checked);
+      if (!selected.length) {
+        liveCard.hidden = false;
+        liveTitle.textContent = "Catalog Batch";
+        setLiveStatus("error");
+        liveSummary.textContent = "Choose at least one track first.";
+        liveLog.textContent = "No batch started.";
+        return;
+      }
+
+      const formData = new FormData(form);
+      try {
+        const response = await fetch(startUrl, {
+          method: "POST",
+          body: formData,
+          headers: { Accept: "application/json" },
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || "Could not start catalog batch.");
+        }
+        renderSnapshot(payload.primary || null);
+        connectStream(payload.stream_url);
+      } catch (error) {
+        liveCard.hidden = false;
+        liveTitle.textContent = "Catalog Batch";
+        setLiveStatus("error");
+        liveSummary.textContent = error.message || "Could not start catalog batch.";
+        liveLog.textContent = "Batch startup failed.";
+      }
+    });
+  }
+
+  updateCount();
+  refreshStatus().then((snapshot) => {
+    if (snapshot && ["running", "stopping"].includes(snapshot.status)) {
+      connectStream({{ url_for('web.catalog_batch_stream') | tojson }});
+    }
+  });
+});
+</script>
+{% endblock %}

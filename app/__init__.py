@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import logging.handlers
-import json
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from env_config import coerce_json_config_values, read_json_config, should_apply_json_config
 from flask import Flask, request
 from werkzeug.exceptions import HTTPException, InternalServerError
 
@@ -14,31 +15,22 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 
 def _load_json_config() -> None:
-    config_path = Path(__file__).resolve().parent.parent / "config.json"
-    if not config_path.exists():
+    if not should_apply_json_config():
         return
 
+    config_path = Path(__file__).resolve().parent.parent / "config.json"
     try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        raw = read_json_config(config_path)
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
         logging.getLogger(__name__).warning("Config JSON read failed: %s", exc)
         return
-
-    if not isinstance(raw, dict):
-        logging.getLogger(__name__).warning("Config JSON must be an object of key/value pairs.")
+    if raw is None:
         return
 
-    for key, value in raw.items():
-        if value is None:
+    for key, value in coerce_json_config_values(raw).items():
+        if os.environ.get(key, ""):
             continue
-        if os.environ.get(str(key), ""):
-            continue
-        if isinstance(value, bool):
-            os.environ[str(key)] = "1" if value else "0"
-        elif isinstance(value, (int, float, str)):
-            os.environ[str(key)] = str(value)
-        else:
-            logging.getLogger(__name__).warning("Config JSON key %s has unsupported type.", key)
+        os.environ[key] = value
 
 
 _load_json_config()
@@ -92,15 +84,18 @@ def create_app(config_class: type[object] | None = None) -> Flask:
     Path(playlist_dir).mkdir(parents=True, exist_ok=True)
     Path(app.config["SETTINGS_FILE"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["PLAYLIST_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
+    Path(app.config["LIBRARY_INDEX_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
 
     _configure_logging(app.config["DATA_DIR"])
 
     from .routes.api import api_bp
     from .routes.web import web_bp
+    from .services.library_index import init_library_index
     from .services.playlist_history import init_playlist_history
     from .services.scheduled_imports import start_playlist_scheduler
 
     init_playlist_history(app.config["PLAYLIST_DB_PATH"])
+    init_library_index(app.config["LIBRARY_INDEX_DB_PATH"])
     app.register_blueprint(web_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
     start_playlist_scheduler(app)
