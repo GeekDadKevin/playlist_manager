@@ -320,6 +320,7 @@ def identify_tracks_by_audio(
 
     musicbrainz = MusicBrainzService.from_config(os.environ)
     updated = 0
+    updated_paths: list[Path] = []
     skipped = 0
     unresolved = 0
     failed = 0
@@ -450,6 +451,7 @@ def identify_tracks_by_audio(
 
         if dry_run:
             updated += 1
+            updated_paths.append(audio_path)
             _emit(
                 f"[DRY-RUN] would update {relative_path}  "
                 f"[score={score:.2f}  match={label or 'unknown'}"
@@ -489,6 +491,7 @@ def identify_tracks_by_audio(
             continue
 
         updated += 1
+        updated_paths.append(audio_path)
         _emit(
             f"UPDATED: {relative_path}  [score={score:.2f}  match={label or 'unknown'}"
             f"  source={'musicbrainz-metadata' if used_metadata_fallback else 'acoustid'}]",
@@ -503,11 +506,11 @@ def identify_tracks_by_audio(
         lines,
     )
 
-    if not dry_run:
+    if not dry_run and updated_paths:
         refresh_library_index_for_paths(
             library_index_db,
             root,
-            candidates,
+            updated_paths,
             scan_xml_sidecars=True,
         )
 

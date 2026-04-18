@@ -208,6 +208,7 @@ def fix_tags(
         return lines
 
     total_fixed = 0
+    changed_paths: list[Path] = []
     if selected_paths is not None:
         all_audio = selected_paths[:limit] if limit is not None else list(selected_paths)
         _emit(
@@ -327,6 +328,7 @@ def fix_tags(
         )
         p1_fixed += 1
         total_fixed += 1
+        changed_paths.append(audio_path)
 
     _emit(
         f"  => Pass 1 done. fixed={p1_fixed}  skipped={p1_skipped}  failed={p1_failed}",
@@ -414,6 +416,7 @@ def fix_tags(
         )
         p2_fixed += 1
         total_fixed += 1
+        changed_paths.append(audio_path)
 
     _emit(
         f"  => Pass 2 done. fixed={p2_fixed}  no_parse={p2_no_parse}"
@@ -432,6 +435,7 @@ def fix_tags(
 
     _emit("", lines)
     _emit("--- Pass 3: enriching missing MusicBrainz tags ---", lines)
+    enrich_updated_paths = []
     if enrichment_limit == 0:
         _emit("  ... limit already reached during folder-tag cleanup, skipping pass 3.", lines)
     else:
@@ -448,6 +452,12 @@ def fix_tags(
         musicbrainz_updated = enrich_summary.get("updated", 0)
         musicbrainz_failed = enrich_summary.get("failed", 0)
         musicbrainz_unresolved = enrich_summary.get("unresolved", 0)
+        # Parse updated file paths from enrich_lines
+        for line in enrich_lines:
+            if line.startswith("UPDATED: "):
+                # Format: UPDATED: relative_path [...]
+                rel_path = line.split()[1]
+                enrich_updated_paths.append(root / rel_path)
 
     total_changed = total_fixed + musicbrainz_updated
     total_failed = p1_failed + p2_failed + musicbrainz_failed
@@ -462,19 +472,13 @@ def fix_tags(
         lines,
     )
     if not dry_run:
-        if selected_paths is not None:
+        # Only re-index files that were actually changed (fixed or enriched)
+        all_changed = changed_paths + enrich_updated_paths
+        if all_changed:
             refresh_library_index_for_paths(
                 library_index_db,
                 root,
-                all_audio,
-                scan_xml_sidecars=False,
-            )
-        else:
-            refresh_library_index(
-                library_index_db,
-                root,
-                progress_callback=lambda line: _emit(line, lines),
-                limit=limit,
+                all_changed,
                 scan_xml_sidecars=False,
             )
     record_library_tool_run(

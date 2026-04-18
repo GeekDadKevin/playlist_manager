@@ -270,6 +270,7 @@ def enrich_musicbrainz_tags(
     listenbrainz = ListenBrainzService.from_config(os.environ)
     musicbrainz = MusicBrainzService.from_config(os.environ)
     updated = 0
+    updated_paths: list[Path] = []
     unresolved: list[str] = []
     failed = 0
 
@@ -359,6 +360,7 @@ def enrich_musicbrainz_tags(
                 lines,
             )
             updated += 1
+            updated_paths.append(audio_path)
             continue
 
         try:
@@ -370,6 +372,7 @@ def enrich_musicbrainz_tags(
             continue
 
         updated += 1
+        updated_paths.append(audio_path)
         _emit(
             "UPDATED: "
             f"{relative_path}  [fields={', '.join(changes)}  "
@@ -394,22 +397,13 @@ def enrich_musicbrainz_tags(
         lines,
     )
 
-    if not dry_run:
-        if selected_paths is not None:
-            refresh_library_index_for_paths(
-                library_index_db,
-                root,
-                candidates,
-                scan_xml_sidecars=False,
-            )
-        else:
-            refresh_library_index(
-                library_index_db,
-                root,
-                progress_callback=lambda line: _emit(line, lines),
-                limit=limit,
-                scan_xml_sidecars=False,
-            )
+    if not dry_run and updated_paths:
+        refresh_library_index_for_paths(
+            library_index_db,
+            root,
+            updated_paths,
+            scan_xml_sidecars=False,
+        )
 
     if record_run:
         record_library_tool_run(

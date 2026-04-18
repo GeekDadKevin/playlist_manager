@@ -236,6 +236,7 @@ def rebuild(
     failed = 0
     scanned_xml = 0
     scanned_audio = 0
+    changed_audio_paths: set[Path] = set()
 
     # ------------------------------------------------------------------
     # Pass 1: delete orphaned XML sidecars.
@@ -268,6 +269,10 @@ def rebuild(
         if not dry_run:
             try:
                 xml_path.unlink()
+                # Add paired audio path for re-indexing
+                audio_path = xml_path.with_suffix("")
+                if audio_path.exists():
+                    changed_audio_paths.add(audio_path)
             except OSError as exc:
                 _emit(f"  ERROR deleting {xml_path}: {exc}", lines)
                 failed += 1
@@ -329,6 +334,7 @@ def rebuild(
                     musicbrainz_track_id=tags.get("musicbrainz_track_id", ""),
                     overwrite=True,
                 )
+                changed_audio_paths.add(audio_path)
             except Exception as exc:
                 _emit(f"  ERROR creating {xml_path}: {exc}", lines)
                 failed += 1
@@ -409,6 +415,7 @@ def rebuild(
                 lines,
             )
             fixed += 1
+            changed_audio_paths.add(audio_path)
 
     _emit(
         f"  => Pass 3 done. Scanned {scanned_fix} XML(s), "
@@ -426,20 +433,12 @@ def rebuild(
         f"  dry_run={dry_run}  full_scan={full_scan}",
         lines,
     )
-    if not dry_run:
-        if selected_audio_paths is not None:
-            refresh_library_index_for_paths(
-                library_index_db,
-                root,
-                selected_audio_paths,
-            )
-        else:
-            refresh_library_index(
-                library_index_db,
-                root,
-                progress_callback=lambda line: _emit(line, lines),
-                limit=limit,
-            )
+    if not dry_run and changed_audio_paths:
+        refresh_library_index_for_paths(
+            library_index_db,
+            root,
+            list(changed_audio_paths),
+        )
     record_library_tool_run(
         library_index_db,
         tool_name="rebuild-xml",

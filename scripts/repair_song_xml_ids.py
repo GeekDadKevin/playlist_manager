@@ -100,6 +100,10 @@ def repair_xml_ids(
         xml_paths=[xml_path for xml_path, _audio_path in candidates],
         progress_callback=lambda line: _emit(line, lines),
     )
+    # Collect updated audio paths for re-indexing
+    updated_audio_paths = [
+        Path(item).with_suffix("") for item in summary["written"]
+    ]
 
     for item in summary["written"][:50]:
         action = "[DRY-RUN] would update" if dry_run else "UPDATED"
@@ -130,20 +134,12 @@ def repair_xml_ids(
         f"failed={summary['failed']}  dry_run={dry_run}  full_scan={full_scan}",
         lines,
     )
-    if not dry_run:
-        if selected_audio_paths is not None:
-            refresh_library_index_for_paths(
-                library_index_db,
-                root,
-                selected_audio_paths,
-            )
-        else:
-            refresh_library_index(
-                library_index_db,
-                root,
-                progress_callback=lambda line: _emit(line, lines),
-                limit=limit,
-            )
+    if not dry_run and updated_audio_paths:
+        refresh_library_index_for_paths(
+            library_index_db,
+            root,
+            updated_audio_paths,
+        )
     record_library_tool_run(
         library_index_db,
         tool_name="repair-xml-ids",
