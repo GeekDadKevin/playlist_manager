@@ -209,6 +209,7 @@ def refresh_library_index(
     seen_relative_paths: set[str] = set()
 
     with _connect(db_path) as conn:
+        # --- XML sidecar scan (unchanged) ---
         if scan_xml_sidecars:
             _emit_progress(progress_callback, "PROGRESS: building XML sidecar list...")
             if not partial_refresh:
@@ -217,11 +218,9 @@ def refresh_library_index(
                     "DELETE FROM library_xml_sidecars WHERE root_path = ?",
                     (str(root_path),),
                 )
-
             xml_paths = sorted(root_path.rglob("*.xml"))
             if partial_refresh:
                 xml_paths = xml_paths[:limit]
-
             for xml_index, xml_path in enumerate(xml_paths, start=1):
                 if not xml_path.is_file():
                     continue
@@ -241,7 +240,6 @@ def refresh_library_index(
                     parse_ok = 1
                 except (ET.ParseError, OSError) as exc:
                     error_message = str(exc)
-
                 now = _utc_now()
                 _execute_write(
                     conn,
@@ -287,174 +285,53 @@ def refresh_library_index(
                 "PROGRESS: skipping XML sidecar scan for audio-only refresh",
             )
 
-        existing_rows = {
+        # --- Fast audio file diff and index ---
+        _emit_progress(progress_callback, "PROGRESS: scanning audio file tree for fast diff...")
+        disk_paths = {}
+        for audio_path in _iter_audio_files(root_path, progress_callback=progress_callback):
+            rel = audio_path.relative_to(root_path).as_posix()
+            disk_paths[rel] = audio_path
+        db_rows = {
             str(row["relative_path"]): row
             for row in conn.execute(
                 "SELECT * FROM library_files WHERE root_path = ?",
                 (str(root_path),),
             ).fetchall()
         }
-
-        _emit_progress(progress_callback, "PROGRESS: building audio file list...")
-
-        for audio_path in _iter_audio_files(root_path, progress_callback=progress_callback):
-            if partial_refresh and scanned >= int(limit or 0):
-                _emit_progress(
-                    progress_callback,
-                    f"PROGRESS: audio limit of {limit} reached, stopping incremental refresh.",
-                )
-                break
+        disk_set = set(disk_paths.keys())
+        db_set = set(db_rows.keys())
+        to_add = disk_set - db_set
+        to_remove = db_set - disk_set
+        to_check = disk_set & db_set
+        # Add new files
+        for rel in sorted(to_add):
+            audio_path = disk_paths[rel]
             scanned += 1
-            relative_path = audio_path.relative_to(root_path).as_posix()
-            if scanned == 1 or scanned % 250 == 0:
-                audio_total = f" / {limit}" if partial_refresh else ""
-                _emit_progress(
-                    progress_callback,
-                    f"PROGRESS: audio files indexed {scanned}{audio_total}",
-                )
-            seen_relative_paths.add(relative_path)
             stat = audio_path.stat()
             modified_at = _iso_from_timestamp(stat.st_mtime)
             size_bytes = int(stat.st_size)
             xml_path = audio_path.with_suffix(".xml")
             xml_exists = xml_path.exists()
             xml_modified_at = _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
-
-            row = existing_rows.get(relative_path)
-            xml_needs_refresh = (
-                scan_xml_sidecars
-                and (
-                    row is None
-                    or row["xml_exists"] != int(xml_exists)
-                    or str(row["xml_modified_at"] or "") != xml_modified_at
-                )
-            )
-            embedded_needs_refresh = (
-                row is None
-                or int(row["size_bytes"] or 0) != size_bytes
-                or str(row["modified_at"] or "") != modified_at
-            )
-
-            xml_state = _empty_xml_state(xml_path)
-            if row is not None:
-                xml_state.update(
-                    {
-                        "xml_parse_ok": int(row["xml_parse_ok"] or 0),
-                        "xml_error": str(row["xml_error"] or ""),
-                        "xml_has_title": int(row["xml_has_title"] or 0),
-                        "xml_has_artist": int(row["xml_has_artist"] or 0),
-                        "xml_has_album": int(row["xml_has_album"] or 0),
-                        "xml_has_downloaded_from": int(row["xml_has_downloaded_from"] or 0),
-                        "xml_has_deezer_id": int(row["xml_has_deezer_id"] or 0),
-                        "xml_has_musicbrainz_track_id": int(
-                            row["xml_has_musicbrainz_track_id"] or 0
-                        ),
-                        "xml_core_complete": int(row["xml_core_complete"] or 0),
-                        "title": str(row["title"] or ""),
-                        "artist": str(row["artist"] or ""),
-                        "album": str(row["album"] or ""),
-                        "provider": str(row["provider"] or ""),
-                        "downloaded_from": str(row["downloaded_from"] or ""),
-                        "deezer_id": str(row["deezer_id"] or ""),
-                        "musicbrainz_track_id": str(row["musicbrainz_track_id"] or ""),
-                    }
-                )
-            if xml_needs_refresh:
-                xml_state = _summarize_xml_state(xml_path)
-                xml_changed += 1
-
-            embedded_state = _empty_embedded_state()
-            if row is not None:
-                embedded_state.update(
-                    {
-                        "embedded_title": str(row["embedded_title"] or ""),
-                        "embedded_artist": str(row["embedded_artist"] or ""),
-                        "embedded_album": str(row["embedded_album"] or ""),
-                        "embedded_albumartist": str(row["embedded_albumartist"] or ""),
-                        "embedded_track_number": str(row["embedded_track_number"] or ""),
-                        "embedded_musicbrainz_album_id": str(
-                            row["embedded_musicbrainz_album_id"] or ""
-                        ),
-                        "embedded_musicbrainz_artist_id": str(
-                            row["embedded_musicbrainz_artist_id"] or ""
-                        ),
-                        "embedded_musicbrainz_albumartist_id": str(
-                            row["embedded_musicbrainz_albumartist_id"] or ""
-                        ),
-                        "embedded_deezer_id": str(row["embedded_deezer_id"] or ""),
-                        "embedded_musicbrainz_track_id": str(
-                            row["embedded_musicbrainz_track_id"] or ""
-                        ),
-                        "embedded_tags_checked_at": str(row["embedded_tags_checked_at"] or ""),
-                    }
-                )
-            if embedded_needs_refresh:
-                embedded_state = _summarize_embedded_state(audio_path)
-                embedded_changed += 1
-
-            created_at = str(row["created_at"]) if row is not None else indexed_at
-            current_values = {
-                "size_bytes": size_bytes,
-                "modified_at": modified_at,
-                "file_missing": 0,
-                "xml_exists": int(xml_exists),
-                "xml_modified_at": xml_modified_at,
-            }
-            if row is None or any(current_values[key] != row[key] for key in current_values):
-                changed += 1
-            else:
-                unchanged += 1
-
+            xml_state = _summarize_xml_state(xml_path)
+            xml_changed += 1 if xml_exists else 0
+            embedded_state = _summarize_embedded_state(audio_path)
+            embedded_changed += 1
+            created_at = indexed_at
             _execute_write(
                 conn,
                 """
                 INSERT INTO library_files (
-                    root_path,
-                    relative_path,
-                    audio_path,
-                    extension,
-                    size_bytes,
-                    modified_at,
-                    discovered_at,
-                    last_indexed_at,
-                    file_missing,
-                    xml_path,
-                    xml_exists,
-                    xml_modified_at,
-                    xml_parse_ok,
-                    xml_error,
-                    xml_has_title,
-                    xml_has_artist,
-                    xml_has_album,
-                    xml_has_downloaded_from,
-                    xml_has_deezer_id,
-                    xml_has_musicbrainz_track_id,
-                    xml_core_complete,
-                    title,
-                    artist,
-                    album,
-                    provider,
-                    downloaded_from,
-                    deezer_id,
-                    musicbrainz_track_id,
-                    embedded_title,
-                    embedded_artist,
-                    embedded_album,
-                    embedded_albumartist,
-                    embedded_track_number,
-                    embedded_musicbrainz_album_id,
-                    embedded_musicbrainz_artist_id,
-                    embedded_musicbrainz_albumartist_id,
-                    embedded_deezer_id,
-                    embedded_musicbrainz_track_id,
-                    musicbrainz_verified_at,
-                    embedded_tags_checked_at,
-                    created_at,
-                    updated_at
-                )
-                VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    root_path, relative_path, audio_path, extension, size_bytes, modified_at,
+                    discovered_at, last_indexed_at, file_missing, xml_path, xml_exists, xml_modified_at,
+                    xml_parse_ok, xml_error, xml_has_title, xml_has_artist, xml_has_album, xml_has_downloaded_from,
+                    xml_has_deezer_id, xml_has_musicbrainz_track_id, xml_core_complete, title, artist, album, provider,
+                    downloaded_from, deezer_id, musicbrainz_track_id, embedded_title, embedded_artist, embedded_album,
+                    embedded_albumartist, embedded_track_number, embedded_musicbrainz_album_id, embedded_musicbrainz_artist_id,
+                    embedded_musicbrainz_albumartist_id, embedded_deezer_id, embedded_musicbrainz_track_id, musicbrainz_verified_at,
+                    embedded_tags_checked_at, created_at, updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 ON CONFLICT(root_path, relative_path) DO UPDATE SET
                     audio_path = excluded.audio_path,
@@ -489,8 +366,7 @@ def refresh_library_index(
                     embedded_track_number = excluded.embedded_track_number,
                     embedded_musicbrainz_album_id = excluded.embedded_musicbrainz_album_id,
                     embedded_musicbrainz_artist_id = excluded.embedded_musicbrainz_artist_id,
-                    embedded_musicbrainz_albumartist_id =
-                        excluded.embedded_musicbrainz_albumartist_id,
+                    embedded_musicbrainz_albumartist_id = excluded.embedded_musicbrainz_albumartist_id,
                     embedded_deezer_id = excluded.embedded_deezer_id,
                     embedded_musicbrainz_track_id = excluded.embedded_musicbrainz_track_id,
                     musicbrainz_verified_at = library_files.musicbrainz_verified_at,
@@ -498,62 +374,119 @@ def refresh_library_index(
                     updated_at = excluded.updated_at
                 """,
                 (
-                    str(root_path),
-                    relative_path,
-                    str(audio_path),
-                    audio_path.suffix.lower(),
-                    size_bytes,
-                    modified_at,
-                    created_at,
-                    indexed_at,
-                    0,
-                    str(xml_path),
-                    int(xml_exists),
-                    xml_modified_at,
-                    xml_state["xml_parse_ok"],
-                    xml_state["xml_error"],
-                    xml_state["xml_has_title"],
-                    xml_state["xml_has_artist"],
-                    xml_state["xml_has_album"],
-                    xml_state["xml_has_downloaded_from"],
-                    xml_state["xml_has_deezer_id"],
-                    xml_state["xml_has_musicbrainz_track_id"],
-                    xml_state["xml_core_complete"],
-                    xml_state["title"],
-                    xml_state["artist"],
-                    xml_state["album"],
-                    xml_state["provider"],
-                    xml_state["downloaded_from"],
-                    xml_state["deezer_id"],
-                    xml_state["musicbrainz_track_id"],
-                    embedded_state["embedded_title"],
-                    embedded_state["embedded_artist"],
-                    embedded_state["embedded_album"],
-                    embedded_state["embedded_albumartist"],
-                    embedded_state["embedded_track_number"],
-                    embedded_state["embedded_musicbrainz_album_id"],
-                    embedded_state["embedded_musicbrainz_artist_id"],
-                    embedded_state["embedded_musicbrainz_albumartist_id"],
-                    embedded_state["embedded_deezer_id"],
-                    embedded_state["embedded_musicbrainz_track_id"],
-                    str(row["musicbrainz_verified_at"] or "") if row is not None else "",
-                    embedded_state["embedded_tags_checked_at"],
-                    created_at,
-                    indexed_at,
+                    str(root_path), rel, str(audio_path), audio_path.suffix.lower(), size_bytes, modified_at,
+                    created_at, indexed_at, 0, str(xml_path), int(xml_exists), xml_modified_at,
+                    xml_state["xml_parse_ok"], xml_state["xml_error"], xml_state["xml_has_title"], xml_state["xml_has_artist"],
+                    xml_state["xml_has_album"], xml_state["xml_has_downloaded_from"], xml_state["xml_has_deezer_id"],
+                    xml_state["xml_has_musicbrainz_track_id"], xml_state["xml_core_complete"], xml_state["title"],
+                    xml_state["artist"], xml_state["album"], xml_state["provider"], xml_state["downloaded_from"],
+                    xml_state["deezer_id"], xml_state["musicbrainz_track_id"], embedded_state["embedded_title"],
+                    embedded_state["embedded_artist"], embedded_state["embedded_album"], embedded_state["embedded_albumartist"],
+                    embedded_state["embedded_track_number"], embedded_state["embedded_musicbrainz_album_id"],
+                    embedded_state["embedded_musicbrainz_artist_id"], embedded_state["embedded_musicbrainz_albumartist_id"],
+                    embedded_state["embedded_deezer_id"], embedded_state["embedded_musicbrainz_track_id"], "", embedded_state["embedded_tags_checked_at"],
+                    created_at, indexed_at
                 ),
             )
-
-        if not partial_refresh:
-            for relative_path, _row in existing_rows.items():
-                if relative_path in seen_relative_paths:
-                    continue
-                _delete_library_file_row(
-                    conn,
-                    root_path=root_path,
-                    relative_path=relative_path,
+            changed += 1
+        # Remove missing files
+        for rel in sorted(to_remove):
+            _delete_library_file_row(
+                conn,
+                root_path=root_path,
+                relative_path=rel,
+            )
+            changed += 1
+        # Check for changed files (mtime/size)
+        for rel in sorted(to_check):
+            audio_path = disk_paths[rel]
+            row = db_rows[rel]
+            stat = audio_path.stat()
+            modified_at = _iso_from_timestamp(stat.st_mtime)
+            size_bytes = int(stat.st_size)
+            if int(row["size_bytes"] or 0) == size_bytes and str(row["modified_at"] or "") == modified_at:
+                unchanged += 1
+                continue
+            # Only update if changed
+            xml_path = audio_path.with_suffix(".xml")
+            xml_exists = xml_path.exists()
+            xml_modified_at = _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
+            xml_state = _summarize_xml_state(xml_path)
+            xml_changed += 1 if xml_exists else 0
+            embedded_state = _summarize_embedded_state(audio_path)
+            embedded_changed += 1
+            created_at = str(row["created_at"]) if row is not None else indexed_at
+            _execute_write(
+                conn,
+                """
+                INSERT INTO library_files (
+                    root_path, relative_path, audio_path, extension, size_bytes, modified_at,
+                    discovered_at, last_indexed_at, file_missing, xml_path, xml_exists, xml_modified_at,
+                    xml_parse_ok, xml_error, xml_has_title, xml_has_artist, xml_has_album, xml_has_downloaded_from,
+                    xml_has_deezer_id, xml_has_musicbrainz_track_id, xml_core_complete, title, artist, album, provider,
+                    downloaded_from, deezer_id, musicbrainz_track_id, embedded_title, embedded_artist, embedded_album,
+                    embedded_albumartist, embedded_track_number, embedded_musicbrainz_album_id, embedded_musicbrainz_artist_id,
+                    embedded_musicbrainz_albumartist_id, embedded_deezer_id, embedded_musicbrainz_track_id, musicbrainz_verified_at,
+                    embedded_tags_checked_at, created_at, updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
-                changed += 1
-
+                ON CONFLICT(root_path, relative_path) DO UPDATE SET
+                    audio_path = excluded.audio_path,
+                    extension = excluded.extension,
+                    size_bytes = excluded.size_bytes,
+                    modified_at = excluded.modified_at,
+                    last_indexed_at = excluded.last_indexed_at,
+                    file_missing = excluded.file_missing,
+                    xml_path = excluded.xml_path,
+                    xml_exists = excluded.xml_exists,
+                    xml_modified_at = excluded.xml_modified_at,
+                    xml_parse_ok = excluded.xml_parse_ok,
+                    xml_error = excluded.xml_error,
+                    xml_has_title = excluded.xml_has_title,
+                    xml_has_artist = excluded.xml_has_artist,
+                    xml_has_album = excluded.xml_has_album,
+                    xml_has_downloaded_from = excluded.xml_has_downloaded_from,
+                    xml_has_deezer_id = excluded.xml_has_deezer_id,
+                    xml_has_musicbrainz_track_id = excluded.xml_has_musicbrainz_track_id,
+                    xml_core_complete = excluded.xml_core_complete,
+                    title = excluded.title,
+                    artist = excluded.artist,
+                    album = excluded.album,
+                    provider = excluded.provider,
+                    downloaded_from = excluded.downloaded_from,
+                    deezer_id = excluded.deezer_id,
+                    musicbrainz_track_id = excluded.musicbrainz_track_id,
+                    embedded_title = excluded.embedded_title,
+                    embedded_artist = excluded.embedded_artist,
+                    embedded_album = excluded.embedded_album,
+                    embedded_albumartist = excluded.embedded_albumartist,
+                    embedded_track_number = excluded.embedded_track_number,
+                    embedded_musicbrainz_album_id = excluded.embedded_musicbrainz_album_id,
+                    embedded_musicbrainz_artist_id = excluded.embedded_musicbrainz_artist_id,
+                    embedded_musicbrainz_albumartist_id = excluded.embedded_musicbrainz_albumartist_id,
+                    embedded_deezer_id = excluded.embedded_deezer_id,
+                    embedded_musicbrainz_track_id = excluded.embedded_musicbrainz_track_id,
+                    musicbrainz_verified_at = library_files.musicbrainz_verified_at,
+                    embedded_tags_checked_at = excluded.embedded_tags_checked_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(root_path), rel, str(audio_path), audio_path.suffix.lower(), size_bytes, modified_at,
+                    created_at, indexed_at, 0, str(xml_path), int(xml_exists), xml_modified_at,
+                    xml_state["xml_parse_ok"], xml_state["xml_error"], xml_state["xml_has_title"], xml_state["xml_has_artist"],
+                    xml_state["xml_has_album"], xml_state["xml_has_downloaded_from"], xml_state["xml_has_deezer_id"],
+                    xml_state["xml_has_musicbrainz_track_id"], xml_state["xml_core_complete"], xml_state["title"],
+                    xml_state["artist"], xml_state["album"], xml_state["provider"], xml_state["downloaded_from"],
+                    xml_state["deezer_id"], xml_state["musicbrainz_track_id"], embedded_state["embedded_title"],
+                    embedded_state["embedded_artist"], embedded_state["embedded_album"], embedded_state["embedded_albumartist"],
+                    embedded_state["embedded_track_number"], embedded_state["embedded_musicbrainz_album_id"],
+                    embedded_state["embedded_musicbrainz_artist_id"], embedded_state["embedded_musicbrainz_albumartist_id"],
+                    embedded_state["embedded_deezer_id"], embedded_state["embedded_musicbrainz_track_id"], str(row["musicbrainz_verified_at"] or ""),
+                    embedded_state["embedded_tags_checked_at"], created_at, indexed_at
+                ),
+            )
+            changed += 1
         conn.commit()
 
     _emit_progress(

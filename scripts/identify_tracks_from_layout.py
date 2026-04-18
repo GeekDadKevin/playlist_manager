@@ -160,13 +160,7 @@ def identify_tracks_from_layout(
             lines,
         )
     else:
-        inventory_summary = refresh_library_index(
-            library_index_db,
-            root,
-            progress_callback=lambda line: _emit(line, lines),
-            limit=limit,
-            scan_xml_sidecars=False,
-        )
+        inventory_summary = None
         candidates = list_structure_tag_candidates(
             library_index_db,
             root,
@@ -174,9 +168,7 @@ def identify_tracks_from_layout(
             limit=limit if full_scan else None,
         )
         _emit(
-            "  Indexed "
-            f"{inventory_summary['scanned']} audio file(s); "
-            f"selected {len(candidates)} candidate file(s) for structure tagging.",
+            f"Selected {len(candidates)} candidate file(s) for structure tagging (from DB).",
             lines,
         )
 
