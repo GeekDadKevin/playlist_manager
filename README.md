@@ -36,7 +36,7 @@ Use the included one-command launchers:
 ```bash
 ./start.sh
 ```
-
+#Kevinwashere
 Both scripts run `uv sync --dev`, validate the current `.env`, and then start the single Flask app that serves both the web UI and the API on **`http://127.0.0.1:3000` only**. If a variable is invalid, startup stops immediately and prints the exact variable name(s) that need fixing. Re-running either script reads `.app.lock`, stops the previously started app process, clears any stale listener on port `3000`, and writes the new PID back to that lock file.
 
 ### ListenBrainz playlist configuration
