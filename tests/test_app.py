@@ -43,7 +43,9 @@ def test_upload_endpoint_keeps_playlist_in_memory(tmp_path) -> None:
         "/api/upload",
         data={
             "file": (
-                io.BytesIO(b"#EXTM3U\n#EXTINF:245,Massive Attack - Teardrop\n/music/test.flac\n"),
+                io.BytesIO(
+                    b"#EXTM3U\n#EXTINF:245,Massive Attack - Teardrop\n/music/test.flac\n"
+                ),
                 "my-playlist.m3u",
             )
         },
@@ -75,7 +77,9 @@ def test_sync_endpoint_requires_deezer_configuration() -> None:
     assert "DEEZER_ARL" in response.json["error"]
 
 
-def test_index_keeps_created_for_you_playlists_visible_after_import(monkeypatch) -> None:
+def test_index_keeps_created_for_you_playlists_visible_after_import(
+    monkeypatch,
+) -> None:
     app = create_app()
     app.config.update(TESTING=True, LISTENBRAINZ_USERNAME="demo")
     client = app.test_client()
@@ -286,7 +290,9 @@ def test_catalog_batch_route_uses_selected_paths(tmp_path, monkeypatch) -> None:
     assert b"Fix Audio Tags: SUMMARY  total_changed=1" in response.data
 
 
-def test_catalog_batch_start_route_returns_live_job_metadata(tmp_path, monkeypatch) -> None:
+def test_catalog_batch_start_route_returns_live_job_metadata(
+    tmp_path, monkeypatch
+) -> None:
     app = create_app()
     app.config.update(
         TESTING=True,
@@ -364,7 +370,9 @@ def test_catalog_batch_stream_route_emits_lines_and_exit(monkeypatch) -> None:
     assert "data: __EXIT__0" in payload
 
 
-def test_catalog_batch_status_and_stop_routes_use_shared_tool_state(monkeypatch) -> None:
+def test_catalog_batch_status_and_stop_routes_use_shared_tool_state(
+    monkeypatch,
+) -> None:
     app = create_app()
     app.config.update(TESTING=True)
 
@@ -398,11 +406,15 @@ def test_catalog_batch_status_and_stop_routes_use_shared_tool_state(monkeypatch)
     assert stop_response.json["primary"]["status"] == "stopping"
 
 
-def test_tools_page_shows_ffmpeg_indicator_for_audio_checker(tmp_path, monkeypatch) -> None:
+def test_tools_page_shows_ffmpeg_indicator_for_audio_checker(
+    tmp_path, monkeypatch
+) -> None:
     app = create_app()
     app.config.update(TESTING=True, NAVIDROME_MUSIC_ROOT=str(tmp_path))
 
-    monkeypatch.setattr("app.routes.web.find_ffmpeg_executable", lambda: "C:/ffmpeg/bin/ffmpeg.exe")
+    monkeypatch.setattr(
+        "app.routes.web.find_ffmpeg_executable", lambda: "C:/ffmpeg/bin/ffmpeg.exe"
+    )
 
     client = app.test_client()
     response = client.get("/tools")
@@ -468,7 +480,9 @@ def test_tools_page_shows_last_identify_audio_review_panel(tmp_path) -> None:
     assert b"Similarity check" not in response.data
 
 
-def test_identify_audio_review_accept_updates_saved_review(tmp_path, monkeypatch) -> None:
+def test_identify_audio_review_accept_updates_saved_review(
+    tmp_path, monkeypatch
+) -> None:
     app = create_app()
     app.config.update(
         TESTING=True,
@@ -519,7 +533,9 @@ def test_identify_audio_review_accept_updates_saved_review(tmp_path, monkeypatch
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         "app.routes.web.apply_identification_metadata",
-        lambda audio_path, details: captured.setdefault("applied", (str(audio_path), details)),
+        lambda audio_path, details: captured.setdefault(
+            "applied", (str(audio_path), details)
+        ),
     )
     monkeypatch.setattr(
         "app.routes.web.refresh_library_index_for_paths",
@@ -624,8 +640,10 @@ def test_identify_audio_review_keep_marks_file_as_accepted_without_metadata_chan
     review = updated_run["result"]["review"]
     assert review["low_confidence_count"] == 0
     assert review["low_confidence_items"] == []
-    assert list_musicbrainz_tag_candidates(app.config["LIBRARY_INDEX_DB_PATH"], tmp_path) == []
-
+    assert (
+        list_musicbrainz_tag_candidates(app.config["LIBRARY_INDEX_DB_PATH"], tmp_path)
+        == []
+    )
 
 
 def test_identify_audio_review_retry_keeps_guardrail_mismatch_in_review(
@@ -730,7 +748,10 @@ def test_identify_audio_review_retry_keeps_guardrail_mismatch_in_review(
     assert review["low_confidence_count"] == 1
     assert review["low_confidence_items"][0]["reason"] == "guardrail"
 
-def test_identify_audio_review_retry_rewrites_saved_candidate(tmp_path, monkeypatch) -> None:
+
+def test_identify_audio_review_retry_rewrites_saved_candidate(
+    tmp_path, monkeypatch
+) -> None:
     app = create_app()
     app.config.update(
         TESTING=True,
@@ -742,7 +763,9 @@ def test_identify_audio_review_retry_rewrites_saved_candidate(tmp_path, monkeypa
     audio_path = tmp_path / "Unknown" / "Album" / "missing.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"audio")
-    write_song_metadata_xml(audio_path, title="missing", artist="Unknown", album="Album")
+    write_song_metadata_xml(
+        audio_path, title="missing", artist="Unknown", album="Album"
+    )
     record_library_tool_run(
         app.config["LIBRARY_INDEX_DB_PATH"],
         tool_name="identify-audio",
@@ -839,7 +862,9 @@ def test_identify_audio_review_retry_redirect_reopens_retry_result_dialog(
     audio_path = tmp_path / "Unknown" / "Album" / "missing.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"audio")
-    write_song_metadata_xml(audio_path, title="missing", artist="Unknown", album="Album")
+    write_song_metadata_xml(
+        audio_path, title="missing", artist="Unknown", album="Album"
+    )
     record_library_tool_run(
         app.config["LIBRARY_INDEX_DB_PATH"],
         tool_name="identify-audio",
@@ -917,7 +942,9 @@ def test_identify_audio_review_retry_uses_musicbrainz_metadata_fallback(
     audio_path = tmp_path / "Unknown" / "Album" / "missing.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"audio")
-    write_song_metadata_xml(audio_path, title="missing", artist="Unknown", album="Album")
+    write_song_metadata_xml(
+        audio_path, title="missing", artist="Unknown", album="Album"
+    )
     record_library_tool_run(
         app.config["LIBRARY_INDEX_DB_PATH"],
         tool_name="identify-audio",
@@ -1231,7 +1258,11 @@ def test_sync_review_bulk_download_selected_action_redirects_back_to_status(
         "app.routes.web.download_selected_low_confidence_candidates",
         lambda job_id, selections: {
             "sync": {"summary": {"low_confidence": 1}},
-            "bulk_summary": {"downloaded": 1, "remaining": 1, "attempted": len(selections)},
+            "bulk_summary": {
+                "downloaded": 1,
+                "remaining": 1,
+                "attempted": len(selections),
+            },
         },
     )
 
@@ -1333,10 +1364,15 @@ def test_sync_status_page_mentions_bulk_download_feedback(monkeypatch) -> None:
     response = client.get("/sync/job-low")
 
     assert response.status_code == 200
-    assert b'This page will stay on the review tab while the downloads finish.' in response.data
+    assert (
+        b"This page will stay on the review tab while the downloads finish."
+        in response.data
+    )
 
 
-def test_sync_review_download_action_returns_json_for_async_progress(monkeypatch) -> None:
+def test_sync_review_download_action_returns_json_for_async_progress(
+    monkeypatch,
+) -> None:
     app = create_app()
     app.config.update(TESTING=True, SECRET_KEY="test-secret")
     client = app.test_client()
@@ -1418,7 +1454,9 @@ def test_sync_status_page_shows_soundcloud_search_message_while_review_preparing
     assert b"Running SoundCloud searches for low-confidence tracks" in response.data
 
 
-def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_path) -> None:
+def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(
+    tmp_path,
+) -> None:
     class StubSoundCloudService:
         def __init__(self) -> None:
             self.search_requests: list[tuple[str, int, int | None]] = []
@@ -1468,7 +1506,11 @@ def test_sync_job_holds_playlist_export_until_low_confidence_is_resolved(tmp_pat
                         "track": {"title": "Teardrop", "artist": "Massive Attack"},
                         "status": "low_confidence",
                         "message": "Best match was below the configured confidence threshold.",
-                        "match": {"title": "Teardrop", "artist": "Massive Attack", "score": 68.5},
+                        "match": {
+                            "title": "Teardrop",
+                            "artist": "Massive Attack",
+                            "score": 68.5,
+                        },
                         "candidates": [
                             {
                                 "title": "Teardrop",
@@ -1701,7 +1743,9 @@ def test_sync_job_uses_broader_soundcloud_fallback_when_fast_preload_finds_nothi
             return result
 
         def search_track(self, track, limit=8, include_soundcloud=False):
-            raise AssertionError("The preload path should not rerun the full Deezer search.")
+            raise AssertionError(
+                "The preload path should not rerun the full Deezer search."
+            )
 
     service = StubService()
     upload = PlaylistUpload(
@@ -1824,7 +1868,9 @@ def test_sync_job_preloads_low_confidence_tracks_in_parallel(tmp_path) -> None:
             return result
 
         def search_track(self, track, limit=8, include_soundcloud=False):
-            raise AssertionError("Parallel preload should not rerun the full Deezer search.")
+            raise AssertionError(
+                "Parallel preload should not rerun the full Deezer search."
+            )
 
     service = StubService()
     upload = PlaylistUpload(
@@ -1944,7 +1990,9 @@ def test_review_page_can_be_reloaded_and_export_playlist_from_ui(tmp_path) -> No
         ),
     )
 
-    review_response = client.get("/review", query_string={"saved_path": upload.saved_path})
+    review_response = client.get(
+        "/review", query_string={"saved_path": upload.saved_path}
+    )
     export_response = client.post(
         "/navidrome/export",
         data={
@@ -1994,7 +2042,9 @@ def test_export_playlist_from_ui_does_not_preserve_stale_source_path(tmp_path) -
         follow_redirects=True,
     )
 
-    written = (tmp_path / "navidrome_playlists" / "Weekly Jams.m3u").read_text(encoding="utf-8")
+    written = (tmp_path / "navidrome_playlists" / "Weekly Jams.m3u").read_text(
+        encoding="utf-8"
+    )
 
     assert response.status_code == 200
     assert "# MISSING: Better Than Ezra - Good" in written

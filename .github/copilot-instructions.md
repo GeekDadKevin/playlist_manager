@@ -19,6 +19,12 @@
 
 # Maintenance Tool DB-Only Policy & Risks
 
+# UI/JS DOM Element Policy
+
+- If a JavaScript error occurs due to a missing DOM element referenced by ID (e.g., `Cannot read properties of null (reading 'hidden')`), always check that the element exists in the template before debugging JS logic.
+- If the element is missing, add it to the template with the expected structure and IDs before making any changes to the JavaScript code.
+- This prevents null reference errors and ensures that UI logic relying on specific DOM nodes works as intended.
+
 - All maintenance tools (catalog, tag, XML, health, repair, etc.) **must** use the library database for all file and sidecar lists. No direct filesystem scans are allowed.
 - The user is responsible for running the catalog refresh tool before any maintenance tool; tools operate only on the DB state.
 - When adding or updating any maintenance tool, the agent must verify that it uses only the DB for file/sidecar discovery and does not scan the filesystem directly.

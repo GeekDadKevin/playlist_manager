@@ -41,7 +41,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.root:
-        print("No music library root was provided. Set NAVIDROME_MUSIC_ROOT or pass a path.")
+        print(
+            "No music library root was provided. Set NAVIDROME_MUSIC_ROOT or pass a path."
+        )
         return 1
 
     try:

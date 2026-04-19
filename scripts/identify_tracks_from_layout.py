@@ -11,6 +11,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/identify_tracks_from_layout_<timestamp>.log
 (or cwd if the root is not writable).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -80,16 +81,24 @@ def _writer_details(
         "release_country": str(metadata.get("release_country") or "").strip(),
         "release_status": str(metadata.get("release_status") or "").strip(),
         "release_type": str(metadata.get("release_type") or "").strip(),
-        "release_secondary_types": str(metadata.get("release_secondary_types") or "").strip(),
+        "release_secondary_types": str(
+            metadata.get("release_secondary_types") or ""
+        ).strip(),
         "language": str(metadata.get("language") or "").strip(),
         "script": str(metadata.get("script") or "").strip(),
-        "recording_disambiguation": str(metadata.get("recording_disambiguation") or "").strip(),
+        "recording_disambiguation": str(
+            metadata.get("recording_disambiguation") or ""
+        ).strip(),
         "album_disambiguation": str(metadata.get("album_disambiguation") or "").strip(),
         "recording_mbid": str(metadata.get("musicbrainz_track_id") or "").strip(),
         "release_mbid": str(metadata.get("musicbrainz_album_id") or "").strip(),
-        "release_group_mbid": str(metadata.get("musicbrainz_release_group_id") or "").strip(),
+        "release_group_mbid": str(
+            metadata.get("musicbrainz_release_group_id") or ""
+        ).strip(),
         "artist_mbid": str(metadata.get("musicbrainz_artist_id") or "").strip(),
-        "albumartist_mbid": str(metadata.get("musicbrainz_albumartist_id") or "").strip(),
+        "albumartist_mbid": str(
+            metadata.get("musicbrainz_albumartist_id") or ""
+        ).strip(),
     }
 
 
@@ -153,23 +162,23 @@ def identify_tracks_from_layout(
 
     if selected_paths is not None:
         inventory_summary = None
-        candidates = selected_paths[:limit] if limit is not None else list(selected_paths)
-        _emit(
-            f"  Using explicit selection of {len(candidates)} audio file(s) for structure tagging.",
-            lines,
+        candidates = (
+            selected_paths[:limit] if limit is not None else list(selected_paths)
         )
+        _emit(f"PROGRESS: using explicit selection of {len(candidates)} audio file(s) for structure tagging.", lines)
     else:
         inventory_summary = None
+        _emit(f"PROGRESS: querying DB for structure-tag candidates...", lines)
         candidates = list_structure_tag_candidates(
             library_index_db,
             root,
             force_full=full_scan,
             limit=limit if full_scan else None,
         )
-        _emit(
-            f"Selected {len(candidates)} candidate file(s) for structure tagging (from DB).",
-            lines,
-        )
+        _emit(f"PROGRESS: selected {len(candidates)} candidate file(s) for structure tagging (from DB).", lines)
+
+    total = len(candidates)
+    _emit(f"PROGRESS: found {total} candidate audio file(s) to check (from DB)", lines)
 
     scanned = 0
     updated = 0
@@ -180,33 +189,35 @@ def identify_tracks_from_layout(
     for index, audio_path in enumerate(candidates, start=1):
         scanned += 1
         relative = audio_path.relative_to(root)
-        _emit(f"CHECK STRUCTURE: {index}/{len(candidates)}  {relative}", lines)
+        _emit(f"PROGRESS: checking file {index}/{total}: {relative}", lines)
         current = load_embedded_audio_metadata(audio_path)
         guessed = guess_preliminary_metadata(audio_path, root=root)
         changes = _planned_changes(current, guessed, full_scan=full_scan)
         if not changes:
+            _emit(f"PROGRESS: no changes needed for {relative} ({index}/{total})", lines)
             unchanged += 1
             continue
 
         planned = ", ".join(f"{key}={value!r}" for key, value in changes.items())
         if dry_run:
-            _emit(f"  [DRY-RUN] would set {relative}  [{planned}]", lines)
+            _emit(f"PROGRESS: [DRY-RUN] would set {relative}  [{planned}] ({index}/{total})", lines)
             updated += 1
             continue
 
+        _emit(f"PROGRESS: writing tags for {relative} ({index}/{total})", lines)
         try:
             write_musicbrainz_tags(
                 audio_path,
                 _writer_details(current, guessed, full_scan=full_scan),
             )
         except Exception as exc:
-            _emit(f"  ERROR writing {relative}: {exc}", lines)
+            _emit(f"PROGRESS: ERROR writing {relative}: {exc} ({index}/{total})", lines)
             failed += 1
             continue
 
         written_paths.append(audio_path)
         updated += 1
-        _emit(f"  TAGGED: {relative}  [{planned}]", lines)
+        _emit(f"PROGRESS: tagged {relative} [{planned}] ({index}/{total})", lines)
 
     if not dry_run and written_paths:
         refresh_library_index_for_paths(

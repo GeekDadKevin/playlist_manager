@@ -7,7 +7,11 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from env_config import coerce_json_config_values, read_json_config, should_apply_json_config
+from env_config import (
+    coerce_json_config_values,
+    read_json_config,
+    should_apply_json_config,
+)
 from flask import Flask, request
 from werkzeug.exceptions import HTTPException, InternalServerError
 
@@ -37,7 +41,9 @@ _load_json_config()
 
 
 def _configure_logging(data_dir: str) -> None:
-    log_path = Path(data_dir) / "app.log"
+    log_dir = Path(data_dir) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "app.log"
     formatter = logging.Formatter(
         "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -49,7 +55,9 @@ def _configure_logging(data_dir: str) -> None:
     file_handler.setLevel(logging.DEBUG)
 
     root = logging.getLogger()
-    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
+    if not any(
+        isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers
+    ):
         root.setLevel(logging.DEBUG)
         root.addHandler(file_handler)
 
@@ -109,9 +117,7 @@ def _register_error_handlers(app: Flask) -> None:
     log = logging.getLogger(__name__)
 
     def handle_http_error(error: HTTPException):
-        log.warning(
-            "HTTP %s %s %s", error.code, request.method, request.path
-        )
+        log.warning("HTTP %s %s %s", error.code, request.method, request.path)
         return error
 
     def handle_unhandled_error(error: Exception):

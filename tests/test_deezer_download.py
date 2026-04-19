@@ -12,7 +12,10 @@ from app.services.musicbrainz import MusicBrainzService
 
 def test_deezer_sync_downloads_track(tmp_path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "www.deezer.com" and request.url.path == "/ajax/gw-light.php":
+        if (
+            request.url.host == "www.deezer.com"
+            and request.url.path == "/ajax/gw-light.php"
+        ):
             method = request.url.params.get("method")
             if method == "deezer.getUserData":
                 return httpx.Response(
@@ -26,7 +29,9 @@ def test_deezer_sync_downloads_track(tmp_path) -> None:
                     headers={"set-cookie": "sid=session-cookie; Path=/; HttpOnly"},
                 )
             if method == "song.getData":
-                return httpx.Response(200, json={"results": {"TRACK_TOKEN": "track-token"}})
+                return httpx.Response(
+                    200, json={"results": {"TRACK_TOKEN": "track-token"}}
+                )
 
         if request.url.host == "api.deezer.com" and request.url.path == "/search":
             return httpx.Response(
@@ -53,7 +58,9 @@ def test_deezer_sync_downloads_track(tmp_path) -> None:
                             "media": [
                                 {
                                     "format": "FLAC",
-                                    "sources": [{"url": "https://cdn.example.test/track.flac"}],
+                                    "sources": [
+                                        {"url": "https://cdn.example.test/track.flac"}
+                                    ],
                                 }
                             ]
                         }
@@ -73,7 +80,9 @@ def test_deezer_sync_downloads_track(tmp_path) -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    result = service.sync_tracks([PlaylistTrack(title="Teardrop", artist="Massive Attack")])
+    result = service.sync_tracks(
+        [PlaylistTrack(title="Teardrop", artist="Massive Attack")]
+    )
 
     assert result["processing_mode"] == "sequential"
     assert result["summary"]["downloaded"] == 1
@@ -122,7 +131,9 @@ def test_deezer_search_track_returns_ranked_match() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    ranked = service.search_track(PlaylistTrack(title="Teardrop", artist="Massive Attack"))
+    ranked = service.search_track(
+        PlaylistTrack(title="Teardrop", artist="Massive Attack")
+    )
 
     assert ranked[0]["title"] == "Teardrop"
     assert ranked[0]["accepted"] is True
@@ -130,7 +141,10 @@ def test_deezer_search_track_returns_ranked_match() -> None:
 
 def test_deezer_sync_keeps_soundcloud_for_manual_review_only(tmp_path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "www.deezer.com" and request.url.path == "/ajax/gw-light.php":
+        if (
+            request.url.host == "www.deezer.com"
+            and request.url.path == "/ajax/gw-light.php"
+        ):
             method = request.url.params.get("method")
             if method == "deezer.getUserData":
                 return httpx.Response(
@@ -154,7 +168,9 @@ def test_deezer_sync_keeps_soundcloud_for_manual_review_only(tmp_path) -> None:
         def is_configured(self) -> bool:
             return True
 
-        def search_track(self, track: PlaylistTrack, limit: int = 10) -> list[dict[str, object]]:
+        def search_track(
+            self, track: PlaylistTrack, limit: int = 10
+        ) -> list[dict[str, object]]:
             self.search_calls += 1
             return [
                 {
@@ -180,7 +196,9 @@ def test_deezer_sync_keeps_soundcloud_for_manual_review_only(tmp_path) -> None:
         soundcloud_service=cast(Any, soundcloud),
     )
 
-    result = service.sync_tracks([PlaylistTrack(title="Teardrop", artist="Massive Attack")])
+    result = service.sync_tracks(
+        [PlaylistTrack(title="Teardrop", artist="Massive Attack")]
+    )
 
     assert result["summary"]["downloaded"] == 0
     assert result["summary"]["not_found"] == 1
@@ -211,7 +229,9 @@ def test_deezer_review_candidates_can_include_soundcloud_when_requested() -> Non
         def is_configured(self) -> bool:
             return True
 
-        def search_track(self, track: PlaylistTrack, limit: int = 10) -> list[dict[str, object]]:
+        def search_track(
+            self, track: PlaylistTrack, limit: int = 10
+        ) -> list[dict[str, object]]:
             return [
                 {
                     "id": "soundcloud:123",
@@ -249,7 +269,10 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_listenbrainz(
     monkeypatch,
 ) -> None:
     def deezer_handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "www.deezer.com" and request.url.path == "/ajax/gw-light.php":
+        if (
+            request.url.host == "www.deezer.com"
+            and request.url.path == "/ajax/gw-light.php"
+        ):
             method = request.url.params.get("method")
             if method == "deezer.getUserData":
                 return httpx.Response(
@@ -263,7 +286,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_listenbrainz(
                     headers={"set-cookie": "sid=session-cookie; Path=/; HttpOnly"},
                 )
             if method == "song.getData":
-                return httpx.Response(200, json={"results": {"TRACK_TOKEN": "track-token"}})
+                return httpx.Response(
+                    200, json={"results": {"TRACK_TOKEN": "track-token"}}
+                )
 
         if request.url.host == "api.deezer.com" and request.url.path == "/search":
             return httpx.Response(
@@ -290,7 +315,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_listenbrainz(
                             "media": [
                                 {
                                     "format": "FLAC",
-                                    "sources": [{"url": "https://cdn.example.test/track.flac"}],
+                                    "sources": [
+                                        {"url": "https://cdn.example.test/track.flac"}
+                                    ],
                                 }
                             ]
                         }
@@ -301,7 +328,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_listenbrainz(
         if request.url.host == "cdn.example.test":
             return httpx.Response(200, content=(b"0" * 2048) + b"abc")
 
-        raise AssertionError(f"Unexpected Deezer request: {request.method} {request.url}")
+        raise AssertionError(
+            f"Unexpected Deezer request: {request.method} {request.url}"
+        )
 
     def listenbrainz_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/1/metadata/lookup/"
@@ -351,7 +380,10 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_musicbrainz(
     monkeypatch,
 ) -> None:
     def deezer_handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "www.deezer.com" and request.url.path == "/ajax/gw-light.php":
+        if (
+            request.url.host == "www.deezer.com"
+            and request.url.path == "/ajax/gw-light.php"
+        ):
             method = request.url.params.get("method")
             if method == "deezer.getUserData":
                 return httpx.Response(
@@ -365,7 +397,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_musicbrainz(
                     headers={"set-cookie": "sid=session-cookie; Path=/; HttpOnly"},
                 )
             if method == "song.getData":
-                return httpx.Response(200, json={"results": {"TRACK_TOKEN": "track-token"}})
+                return httpx.Response(
+                    200, json={"results": {"TRACK_TOKEN": "track-token"}}
+                )
 
         if request.url.host == "api.deezer.com" and request.url.path == "/search":
             return httpx.Response(
@@ -392,7 +426,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_musicbrainz(
                             "media": [
                                 {
                                     "format": "FLAC",
-                                    "sources": [{"url": "https://cdn.example.test/track.flac"}],
+                                    "sources": [
+                                        {"url": "https://cdn.example.test/track.flac"}
+                                    ],
                                 }
                             ]
                         }
@@ -403,7 +439,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_musicbrainz(
         if request.url.host == "cdn.example.test":
             return httpx.Response(200, content=(b"0" * 2048) + b"abc")
 
-        raise AssertionError(f"Unexpected Deezer request: {request.method} {request.url}")
+        raise AssertionError(
+            f"Unexpected Deezer request: {request.method} {request.url}"
+        )
 
     def musicbrainz_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/ws/2/recording"
@@ -427,7 +465,9 @@ def test_deezer_sync_fetches_musicbrainz_recording_id_from_musicbrainz(
         download_dir=str(tmp_path),
         quality="FLAC",
         transport=httpx.MockTransport(deezer_handler),
-        musicbrainz_service=MusicBrainzService(transport=httpx.MockTransport(musicbrainz_handler)),
+        musicbrainz_service=MusicBrainzService(
+            transport=httpx.MockTransport(musicbrainz_handler)
+        ),
     )
 
     monkeypatch.setattr(
@@ -454,7 +494,10 @@ def test_deezer_sync_logs_when_musicbrainz_recording_id_cannot_be_resolved(
     monkeypatch,
 ) -> None:
     def deezer_handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "www.deezer.com" and request.url.path == "/ajax/gw-light.php":
+        if (
+            request.url.host == "www.deezer.com"
+            and request.url.path == "/ajax/gw-light.php"
+        ):
             method = request.url.params.get("method")
             if method == "deezer.getUserData":
                 return httpx.Response(
@@ -468,7 +511,9 @@ def test_deezer_sync_logs_when_musicbrainz_recording_id_cannot_be_resolved(
                     headers={"set-cookie": "sid=session-cookie; Path=/; HttpOnly"},
                 )
             if method == "song.getData":
-                return httpx.Response(200, json={"results": {"TRACK_TOKEN": "track-token"}})
+                return httpx.Response(
+                    200, json={"results": {"TRACK_TOKEN": "track-token"}}
+                )
 
         if request.url.host == "api.deezer.com" and request.url.path == "/search":
             return httpx.Response(
@@ -495,7 +540,9 @@ def test_deezer_sync_logs_when_musicbrainz_recording_id_cannot_be_resolved(
                             "media": [
                                 {
                                     "format": "FLAC",
-                                    "sources": [{"url": "https://cdn.example.test/track.flac"}],
+                                    "sources": [
+                                        {"url": "https://cdn.example.test/track.flac"}
+                                    ],
                                 }
                             ]
                         }
@@ -506,7 +553,9 @@ def test_deezer_sync_logs_when_musicbrainz_recording_id_cannot_be_resolved(
         if request.url.host == "cdn.example.test":
             return httpx.Response(200, content=(b"0" * 2048) + b"abc")
 
-        raise AssertionError(f"Unexpected Deezer request: {request.method} {request.url}")
+        raise AssertionError(
+            f"Unexpected Deezer request: {request.method} {request.url}"
+        )
 
     def listenbrainz_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"payload": {}})
@@ -527,7 +576,9 @@ def test_deezer_sync_logs_when_musicbrainz_recording_id_cannot_be_resolved(
             auth_token="secret-token",
             transport=httpx.MockTransport(listenbrainz_handler),
         ),
-        musicbrainz_service=MusicBrainzService(transport=httpx.MockTransport(musicbrainz_handler)),
+        musicbrainz_service=MusicBrainzService(
+            transport=httpx.MockTransport(musicbrainz_handler)
+        ),
     )
 
     monkeypatch.setattr(
@@ -535,7 +586,9 @@ def test_deezer_sync_logs_when_musicbrainz_recording_id_cannot_be_resolved(
         lambda *args, **kwargs: Path(args[0]) / "cover.jpg",
     )
 
-    service.sync_tracks([PlaylistTrack(title="Teardrop", artist="Massive Attack", track_number=1)])
+    service.sync_tracks(
+        [PlaylistTrack(title="Teardrop", artist="Massive Attack", track_number=1)]
+    )
 
     assert (
         "No MusicBrainz recording ID found for Massive Attack - Mezzanine - 1 - Teardrop"

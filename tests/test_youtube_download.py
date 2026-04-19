@@ -19,7 +19,9 @@ class StubYDL:
 
     def extract_info(self, url: str, download: bool = False):
         if not download:
-            raise AssertionError(f"Unexpected yt-dlp request: {url!r}, download={download}")
+            raise AssertionError(
+                f"Unexpected yt-dlp request: {url!r}, download={download}"
+            )
 
         filepath = self.opts["outtmpl"]["default"].replace("%(ext)s", "m4a")
         Path(filepath).write_text("fake audio", encoding="utf-8")
@@ -34,7 +36,9 @@ class StubYDL:
         }
 
 
-def test_youtube_download_preserves_dotted_title_before_audio_extension(tmp_path) -> None:
+def test_youtube_download_preserves_dotted_title_before_audio_extension(
+    tmp_path,
+) -> None:
     service = YouTubeDownloadService(
         download_dir=str(tmp_path),
         extractor_factory=lambda opts: StubYDL(opts, {}),

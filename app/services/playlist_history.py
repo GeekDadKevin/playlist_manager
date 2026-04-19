@@ -103,10 +103,14 @@ def record_playlist_run(
     summary = _derive_summary(summary, results)
 
     export = export_result or {}
-    export_path = str(export.get("target_path", "") or export.get("filename", "")).strip()
+    export_path = str(
+        export.get("target_path", "") or export.get("filename", "")
+    ).strip()
     playlist_stem = Path(export_path).stem or _build_playlist_stem(playlist_name)
     created_at = str(
-        payload.get("completed_at") or payload.get("started_at") or datetime.now(UTC).isoformat()
+        payload.get("completed_at")
+        or payload.get("started_at")
+        or datetime.now(UTC).isoformat()
     )
 
     with _connect(db_path) as conn:
@@ -144,7 +148,11 @@ def record_playlist_run(
                 saved_path,
                 export_path,
                 int(bool(export.get("written"))),
-                int(summary.get("requested", len(results) or export.get("entry_count", 0) or 0)),
+                int(
+                    summary.get(
+                        "requested", len(results) or export.get("entry_count", 0) or 0
+                    )
+                ),
                 int(summary.get("processed", len(results))),
                 int(summary.get("downloaded", 0)),
                 int(summary.get("already_available", 0)),
@@ -164,19 +172,35 @@ def record_playlist_run(
         for position, item in enumerate(results, start=1):
             track = item.get("track") if isinstance(item, dict) else {}
             match = item.get("match") if isinstance(item, dict) else {}
-            resolved_match = item.get("resolved_match") if isinstance(item, dict) else {}
+            resolved_match = (
+                item.get("resolved_match") if isinstance(item, dict) else {}
+            )
 
-            track_title = _text_value(track.get("title")) if isinstance(track, dict) else ""
-            track_artist = _text_value(track.get("artist")) if isinstance(track, dict) else ""
-            track_album = _text_value(track.get("album")) if isinstance(track, dict) else ""
-            track_source = _text_value(track.get("source")) if isinstance(track, dict) else ""
+            track_title = (
+                _text_value(track.get("title")) if isinstance(track, dict) else ""
+            )
+            track_artist = (
+                _text_value(track.get("artist")) if isinstance(track, dict) else ""
+            )
+            track_album = (
+                _text_value(track.get("album")) if isinstance(track, dict) else ""
+            )
+            track_source = (
+                _text_value(track.get("source")) if isinstance(track, dict) else ""
+            )
             match_id = _text_value(match.get("id")) if isinstance(match, dict) else ""
-            provider = _text_value(match.get("provider")) if isinstance(match, dict) else ""
+            provider = (
+                _text_value(match.get("provider")) if isinstance(match, dict) else ""
+            )
             deezer_id = match_id if match_id.startswith("ext-deezer-") else ""
             score = match.get("score") if isinstance(match, dict) else None
             status = _text_value(item.get("status")) if isinstance(item, dict) else ""
             local_path = _first_non_empty(
-                _text_value(resolved_match.get("path")) if isinstance(resolved_match, dict) else "",
+                (
+                    _text_value(resolved_match.get("path"))
+                    if isinstance(resolved_match, dict)
+                    else ""
+                ),
                 _text_value(match.get("path")) if isinstance(match, dict) else "",
             )
             if not local_path and status in {"already_available", "downloaded"}:
@@ -215,7 +239,11 @@ def record_playlist_run(
                     track_title,
                     track_artist,
                     track_album,
-                    _int_value(track.get("duration_seconds")) if isinstance(track, dict) else None,
+                    (
+                        _int_value(track.get("duration_seconds"))
+                        if isinstance(track, dict)
+                        else None
+                    ),
                     track_source,
                     status,
                     match_id,
@@ -232,7 +260,9 @@ def record_playlist_run(
     return run_id
 
 
-def list_tracked_playlists(db_path: str | Path, limit: int = 25) -> list[dict[str, Any]]:
+def list_tracked_playlists(
+    db_path: str | Path, limit: int = 25
+) -> list[dict[str, Any]]:
     init_playlist_history(db_path)
 
     with _connect(db_path) as conn:
@@ -405,19 +435,24 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
 def _build_playlist_stem(playlist_name: str) -> str:
     cleaned_name = _BRACKET_PREFIX_RE.sub("", playlist_name).strip() or "playlist"
     lowered = cleaned_name.lower()
-    is_recurring = any(marker in lowered for marker in ("daily", "weekly", "day of", "week of"))
+    is_recurring = any(
+        marker in lowered for marker in ("daily", "weekly", "day of", "week of")
+    )
 
     if is_recurring:
         cleaned_name = _RECURRING_DATE_RE.sub("", cleaned_name).strip(" ,-_")
         cleaned_name = _RECURRING_FOR_RE.sub("", cleaned_name).strip(" ,-_")
         return _safe_recurring_filename(cleaned_name)
 
-    return secure_filename(cleaned_name).replace("_", "-").strip(".-").lower() or "playlist"
+    return (
+        secure_filename(cleaned_name).replace("_", "-").strip(".-").lower()
+        or "playlist"
+    )
 
 
 def _safe_recurring_filename(value: str) -> str:
-    sanitized = re.sub(r'[<>:"/\\|?*]+', ' ', value)
-    sanitized = re.sub(r'\s+', ' ', sanitized).strip(' .-_')
+    sanitized = re.sub(r'[<>:"/\\|?*]+', " ", value)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip(" .-_")
     if sanitized and sanitized == sanitized.lower():
         sanitized = sanitized.title()
     return sanitized or "Playlist"
@@ -462,7 +497,9 @@ def _completion_percent(summary: dict[str, Any]) -> int:
     return int((completed / total) * 100)
 
 
-def _derive_summary(summary: dict[str, Any], results: list[dict[str, Any]]) -> dict[str, Any]:
+def _derive_summary(
+    summary: dict[str, Any], results: list[dict[str, Any]]
+) -> dict[str, Any]:
     derived = {
         "requested": int(summary.get("requested", len(results))),
         "processed": int(summary.get("processed", len(results))),
@@ -472,7 +509,9 @@ def _derive_summary(summary: dict[str, Any], results: list[dict[str, Any]]) -> d
         "not_found": int(summary.get("not_found", 0)),
         "failed": int(summary.get("failed", 0)),
     }
-    if any(value for key, value in derived.items() if key not in {"requested", "processed"}):
+    if any(
+        value for key, value in derived.items() if key not in {"requested", "processed"}
+    ):
         return derived
 
     for item in results:
@@ -485,7 +524,11 @@ def _derive_summary(summary: dict[str, Any], results: list[dict[str, Any]]) -> d
             match = item.get("match", {})
             source = _text_value(track.get("source")) if isinstance(track, dict) else ""
             local_path = _first_non_empty(
-                _text_value(resolved_match.get("path")) if isinstance(resolved_match, dict) else "",
+                (
+                    _text_value(resolved_match.get("path"))
+                    if isinstance(resolved_match, dict)
+                    else ""
+                ),
                 _text_value(match.get("path")) if isinstance(match, dict) else "",
                 source if _looks_like_local_media(source) else "",
             )
@@ -525,6 +568,12 @@ def _first_non_empty(*values: str) -> str:
 
 def _looks_like_local_media(value: str) -> bool:
     normalized = value.replace("\\", "/").strip().lower()
-    if not normalized or normalized.startswith("http://") or normalized.startswith("https://"):
+    if (
+        not normalized
+        or normalized.startswith("http://")
+        or normalized.startswith("https://")
+    ):
         return False
-    return any(normalized.endswith(ext) for ext in (".mp3", ".flac", ".ogg", ".m4a", ".wav"))
+    return any(
+        normalized.endswith(ext) for ext in (".mp3", ".flac", ".ogg", ".m4a", ".wav")
+    )

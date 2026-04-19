@@ -12,7 +12,9 @@ from app.services.song_metadata import (
 
 
 def test_guess_track_metadata_from_artist_album_track_filename() -> None:
-    result = guess_track_metadata("Type O Negative - October Rust - Be My Druidess.flac")
+    result = guess_track_metadata(
+        "Type O Negative - October Rust - Be My Druidess.flac"
+    )
 
     assert result == {
         "title": "Be My Druidess",
@@ -35,7 +37,9 @@ def test_guess_preliminary_metadata_handles_va_folder_layout() -> None:
     }
 
 
-def test_backfill_missing_song_xml_creates_sidecar_from_filename(tmp_path, monkeypatch) -> None:
+def test_backfill_missing_song_xml_creates_sidecar_from_filename(
+    tmp_path, monkeypatch
+) -> None:
     audio_path = tmp_path / "Type O Negative - October Rust - Be My Druidess.flac"
     audio_path.write_bytes(b"flac")
     calls: list[str] = []
@@ -43,7 +47,9 @@ def test_backfill_missing_song_xml_creates_sidecar_from_filename(tmp_path, monke
     def fake_write_flac_tags(*args, **kwargs):
         calls.append(str(args[0]))
 
-    monkeypatch.setattr("app.services.song_metadata.write_flac_tags", fake_write_flac_tags)
+    monkeypatch.setattr(
+        "app.services.song_metadata.write_flac_tags", fake_write_flac_tags
+    )
 
     summary = backfill_missing_song_xml(tmp_path)
 
@@ -60,7 +66,9 @@ def test_backfill_missing_song_xml_creates_sidecar_from_filename(tmp_path, monke
     assert "<albumtitle>October Rust</albumtitle>" in metadata_xml
 
 
-def test_write_flac_tags_uses_listenbrainz_and_deezer_metadata(tmp_path, monkeypatch) -> None:
+def test_write_flac_tags_uses_listenbrainz_and_deezer_metadata(
+    tmp_path, monkeypatch
+) -> None:
     audio_path = tmp_path / "Type O Negative - October Rust - Be My Druidess.flac"
     audio_path.write_bytes(b"not-a-real-flac")
     captured: dict[str, object] = {}
@@ -141,7 +149,10 @@ def test_write_song_metadata_xml_records_musicbrainz_extra_fields(tmp_path) -> N
 
     metadata_xml = metadata_path.read_text(encoding="utf-8")
     assert "<musicbrainzalbumid>release-456</musicbrainzalbumid>" in metadata_xml
-    assert "<musicbrainzreleasegroupid>group-789</musicbrainzreleasegroupid>" in metadata_xml
+    assert (
+        "<musicbrainzreleasegroupid>group-789</musicbrainzreleasegroupid>"
+        in metadata_xml
+    )
     assert "<genre>IDM</genre>" in metadata_xml
     assert "<barcode>724384559524</barcode>" in metadata_xml
 
@@ -282,7 +293,6 @@ def test_load_embedded_audio_metadata_reads_mp4_and_id3_style_custom_ids(
     assert metadata["deezer_album_id"] == "77"
 
 
-
 def test_backfill_missing_song_xml_keeps_embedded_ids(tmp_path, monkeypatch) -> None:
     audio_path = tmp_path / "Massive Attack - Mezzanine - Teardrop.flac"
     audio_path.write_bytes(b"flac")
@@ -301,7 +311,9 @@ def test_backfill_missing_song_xml_keeps_embedded_ids(tmp_path, monkeypatch) -> 
             "deezer_link": "https://www.deezer.com/track/12345",
         },
     )
-    monkeypatch.setattr("app.services.song_metadata.write_flac_tags", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.services.song_metadata.write_flac_tags", lambda *args, **kwargs: None
+    )
 
     summary = backfill_missing_song_xml(tmp_path)
 
@@ -363,7 +375,9 @@ def test_repair_song_metadata_xml_ids_updates_existing_xml_and_reports_unresolve
     assert "<deezerid>12345</deezerid>" in metadata_xml
 
 
-def test_repair_song_metadata_xml_ids_reports_unresolved_deezer_xml(tmp_path, monkeypatch) -> None:
+def test_repair_song_metadata_xml_ids_reports_unresolved_deezer_xml(
+    tmp_path, monkeypatch
+) -> None:
     audio_path = tmp_path / "Massive Attack - Mezzanine - Teardrop.flac"
     audio_path.write_bytes(b"flac")
     metadata_path = audio_path.with_suffix(".xml")

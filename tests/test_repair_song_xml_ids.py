@@ -10,7 +10,9 @@ from app.services.library_index import refresh_library_index
 def _load_repair_module():
     repo_root = Path(__file__).resolve().parents[1]
     module_path = repo_root / "scripts" / "repair_song_xml_ids.py"
-    spec = importlib.util.spec_from_file_location("repair_song_xml_ids_test_module", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "repair_song_xml_ids_test_module", module_path
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -85,7 +87,9 @@ def test_repair_xml_ids_refresh_respects_limit(tmp_path, monkeypatch) -> None:
             "xml_scan_skipped": 0,
         }
 
-    monkeypatch.setattr(repair_module, "refresh_library_index", fake_refresh_library_index)
+    monkeypatch.setattr(
+        repair_module, "refresh_library_index", fake_refresh_library_index
+    )
     monkeypatch.setattr(
         repair_module,
         "repair_song_metadata_xml_ids",
@@ -106,7 +110,9 @@ def test_repair_xml_ids_refresh_respects_limit(tmp_path, monkeypatch) -> None:
         lambda db_path, root, force_full=False, limit=None: [(xml_path, audio_path)],
     )
 
-    result = repair_module.repair_xml_ids(tmp_path, limit=5, db_path=tmp_path / "library_index.db")
+    result = repair_module.repair_xml_ids(
+        tmp_path, limit=5, db_path=tmp_path / "library_index.db"
+    )
 
     assert result[1] == 0
     assert captured_limits == [5, 5]

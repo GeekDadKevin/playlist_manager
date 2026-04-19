@@ -87,7 +87,9 @@ def guess_preliminary_metadata(
         track_number = parts[-2].lstrip("0") or "0"
         if _is_va_folder_name(artist):
             artist = parts[0]
-            album_artist = path.parent.parent.name.strip() if path.parent.parent.name else artist
+            album_artist = (
+                path.parent.parent.name.strip() if path.parent.parent.name else artist
+            )
             if len(parts) > 3:
                 album = " - ".join(parts[1:-2]) or album
         else:
@@ -98,12 +100,16 @@ def guess_preliminary_metadata(
     elif len(parts) == 3 and parts[1].isdigit():
         if _is_va_folder_name(artist):
             artist = parts[0]
-            album_artist = path.parent.parent.name.strip() if path.parent.parent.name else artist
+            album_artist = (
+                path.parent.parent.name.strip() if path.parent.parent.name else artist
+            )
         title = parts[-1]
         track_number = parts[1].lstrip("0") or "0"
     elif len(parts) >= 3:
         artist = parts[0]
-        album_artist = path.parent.parent.name.strip() if path.parent.parent.name else artist
+        album_artist = (
+            path.parent.parent.name.strip() if path.parent.parent.name else artist
+        )
         album = " - ".join(parts[1:-1])
         title = parts[-1]
     elif len(parts) == 2:
@@ -112,7 +118,9 @@ def guess_preliminary_metadata(
             title = parts[1]
         else:
             artist = parts[0]
-            album_artist = path.parent.parent.name.strip() if path.parent.parent.name else artist
+            album_artist = (
+                path.parent.parent.name.strip() if path.parent.parent.name else artist
+            )
             title = parts[1]
 
     return {
@@ -210,8 +218,12 @@ def load_embedded_audio_metadata(audio_path: str | Path) -> dict[str, str]:
         "barcode": _first_raw_tag(raw_audio, "barcode"),
         "label": _first_raw_tag(raw_audio, "label", "publisher"),
         "catalog_number": _first_raw_tag(raw_audio, "catalognumber", "catalog_number"),
-        "media_format": _first_raw_tag(raw_audio, "media", "mediaformat", "media_format"),
-        "release_country": _first_raw_tag(raw_audio, "releasecountry", "release_country"),
+        "media_format": _first_raw_tag(
+            raw_audio, "media", "mediaformat", "media_format"
+        ),
+        "release_country": _first_raw_tag(
+            raw_audio, "releasecountry", "release_country"
+        ),
         "release_status": _first_raw_tag(raw_audio, "releasestatus", "release_status"),
         "release_type": _first_raw_tag(raw_audio, "releasetype", "release_type"),
         "release_secondary_types": _first_raw_tag(
@@ -273,7 +285,9 @@ def load_embedded_audio_metadata(audio_path: str | Path) -> dict[str, str]:
             "releasegroupmbid",
             "release_group_mbid",
         ),
-        "deezer_id": _first_raw_tag(raw_audio, "deezer_track_id", "deezertrackid", "deezerid"),
+        "deezer_id": _first_raw_tag(
+            raw_audio, "deezer_track_id", "deezertrackid", "deezerid"
+        ),
         "deezer_artist_id": _first_raw_tag(
             raw_audio,
             "deezer_artist_id",
@@ -286,7 +300,9 @@ def load_embedded_audio_metadata(audio_path: str | Path) -> dict[str, str]:
             "deezeralbumid",
             "deezeralbum",
         ),
-        "deezer_link": _first_raw_tag(raw_audio, "deezer_link", "deezerlink", "deezerurl"),
+        "deezer_link": _first_raw_tag(
+            raw_audio, "deezer_link", "deezerlink", "deezerurl"
+        ),
     }
 
 
@@ -324,7 +340,9 @@ def write_song_metadata_xml(
         "performingartist": artist,
         "albumtitle": album,
         "albumartist": album_artist or artist,
-        "durationseconds": "" if duration_seconds in {None, ""} else str(duration_seconds),
+        "durationseconds": (
+            "" if duration_seconds in {None, ""} else str(duration_seconds)
+        ),
     }
     optional_fields = {
         "provider": provider,
@@ -334,11 +352,14 @@ def write_song_metadata_xml(
             source=source,
         ),
         "deezerid": "" if deezer_id in {None, ""} else str(deezer_id),
-        "deezerartistid": "" if deezer_artist_id in {None, ""} else str(deezer_artist_id),
+        "deezerartistid": (
+            "" if deezer_artist_id in {None, ""} else str(deezer_artist_id)
+        ),
         "deezeralbumid": "" if deezer_album_id in {None, ""} else str(deezer_album_id),
         "deezerlink": deezer_link,
         "tracknumber": "" if track_number in {None, ""} else str(track_number),
-        "musicbrainztrackid": musicbrainz_track_id or extract_musicbrainz_track_id(source),
+        "musicbrainztrackid": musicbrainz_track_id
+        or extract_musicbrainz_track_id(source),
         "description": annotation,
         "quality": quality,
         "audiofile": path.name,
@@ -402,13 +423,20 @@ def write_flac_tags(
         "ALBUM": album,
         "ALBUMARTIST": album_artist or artist,
         "TRACKNUMBER": "" if track_number in {None, ""} else str(track_number),
-        "DURATIONSECONDS": "" if duration_seconds in {None, ""} else str(duration_seconds),
+        "DURATIONSECONDS": (
+            "" if duration_seconds in {None, ""} else str(duration_seconds)
+        ),
         "PROVIDER": provider,
         "DEEZER_TRACK_ID": "" if deezer_id in {None, ""} else str(deezer_id),
-        "DEEZER_ARTIST_ID": "" if deezer_artist_id in {None, ""} else str(deezer_artist_id),
-        "DEEZER_ALBUM_ID": "" if deezer_album_id in {None, ""} else str(deezer_album_id),
+        "DEEZER_ARTIST_ID": (
+            "" if deezer_artist_id in {None, ""} else str(deezer_artist_id)
+        ),
+        "DEEZER_ALBUM_ID": (
+            "" if deezer_album_id in {None, ""} else str(deezer_album_id)
+        ),
         "DEEZER_LINK": deezer_link,
-        "MUSICBRAINZ_TRACKID": musicbrainz_track_id or extract_musicbrainz_track_id(source),
+        "MUSICBRAINZ_TRACKID": musicbrainz_track_id
+        or extract_musicbrainz_track_id(source),
         "SOURCE": source,
         "QUALITY": quality,
         "AUDIO_EXTENSION": path.suffix,
@@ -431,7 +459,9 @@ def backfill_missing_song_xml(
 ) -> dict[str, Any]:
     root_path = Path(root).expanduser()
     if not root_path.exists() or not root_path.is_dir():
-        raise ValueError(f"Music library root does not exist or is not a directory: {root_path}")
+        raise ValueError(
+            f"Music library root does not exist or is not a directory: {root_path}"
+        )
 
     summary: dict[str, Any] = {
         "root": str(root_path),
@@ -444,7 +474,10 @@ def backfill_missing_song_xml(
     }
 
     for audio_path in sorted(root_path.rglob("*")):
-        if not audio_path.is_file() or audio_path.suffix.lower() not in AUDIO_EXTENSIONS:
+        if (
+            not audio_path.is_file()
+            or audio_path.suffix.lower() not in AUDIO_EXTENSIONS
+        ):
             continue
 
         summary["scanned"] += 1
@@ -453,7 +486,9 @@ def backfill_missing_song_xml(
         existing = load_song_metadata_xml(metadata_path)
         embedded = load_embedded_audio_metadata(audio_path)
 
-        title = _coalesce_text(existing.get("title"), embedded.get("title"), guessed["title"])
+        title = _coalesce_text(
+            existing.get("title"), embedded.get("title"), guessed["title"]
+        )
         artist = _coalesce_text(
             existing.get("performingartist"),
             existing.get("artist"),
@@ -483,9 +518,13 @@ def backfill_missing_song_xml(
             existing.get("deezeralbumid"),
             embedded.get("deezer_album_id"),
         )
-        deezer_link = _coalesce_text(existing.get("deezerlink"), embedded.get("deezer_link"))
+        deezer_link = _coalesce_text(
+            existing.get("deezerlink"), embedded.get("deezer_link")
+        )
         source = _coalesce_text(existing.get("source"), str(audio_path))
-        annotation = _coalesce_text(existing.get("description"), existing.get("comment"))
+        annotation = _coalesce_text(
+            existing.get("description"), existing.get("comment")
+        )
         musicbrainz_track_id = _coalesce_text(
             existing.get("musicbrainztrackid"),
             embedded.get("musicbrainz_track_id"),
@@ -551,7 +590,9 @@ def repair_song_metadata_xml_ids(
 ) -> dict[str, Any]:
     root_path = Path(root).expanduser()
     if not root_path.exists() or not root_path.is_dir():
-        raise ValueError(f"Music library root does not exist or is not a directory: {root_path}")
+        raise ValueError(
+            f"Music library root does not exist or is not a directory: {root_path}"
+        )
 
     summary: dict[str, Any] = {
         "root": str(root_path),
@@ -658,7 +699,9 @@ def _repair_xml_id_fields(
     for xml_field, embedded_field in _XML_ID_FIELD_MAP.items():
         embedded_value = str(embedded.get(embedded_field) or "").strip()
         elem = root.find(xml_field)
-        current_value = (elem.text or "").strip() if elem is not None and elem.text else ""
+        current_value = (
+            (elem.text or "").strip() if elem is not None and elem.text else ""
+        )
 
         if embedded_value and current_value != embedded_value:
             changed = True
@@ -691,7 +734,11 @@ def _primary_missing_id_fields(
         provider=provider,
         source=existing.get("source"),
     )
-    if downloaded_from == "deezer" or existing.get("deezerid") or embedded.get("deezer_id"):
+    if (
+        downloaded_from == "deezer"
+        or existing.get("deezerid")
+        or embedded.get("deezer_id")
+    ):
         required_fields.append("deezerid")
 
     return [field for field in required_fields if field in missing_after]

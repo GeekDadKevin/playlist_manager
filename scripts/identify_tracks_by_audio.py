@@ -4,6 +4,7 @@ Scans candidate audio files, generates a Chromaprint fingerprint using fpcalc,
 looks the fingerprint up via AcoustID, then resolves the best MusicBrainz
 recording details for tag and XML repair.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,7 +82,9 @@ def _preserved_xml_fields(audio_path: Path) -> dict[str, str]:
         "source": source,
         "quality": str(xml_data.get("quality") or "").strip(),
         "annotation": str(xml_data.get("description") or "").strip(),
-        "deezer_id": str(xml_data.get("deezerid") or embedded.get("deezer_id") or "").strip(),
+        "deezer_id": str(
+            xml_data.get("deezerid") or embedded.get("deezer_id") or ""
+        ).strip(),
         "deezer_artist_id": str(
             xml_data.get("deezerartistid") or embedded.get("deezer_artist_id") or ""
         ).strip(),
@@ -112,8 +115,14 @@ def _details_need_update(audio_path: Path, details: dict[str, Any]) -> bool:
         (embedded.get("track_number", "").split("/", 1)[0].strip(), track_number),
         (embedded.get("musicbrainz_album_id", ""), normalized["release_mbid"]),
         (embedded.get("musicbrainz_artist_id", ""), normalized["artist_mbid"]),
-        (embedded.get("musicbrainz_albumartist_id", ""), normalized["albumartist_mbid"]),
-        (embedded.get("musicbrainz_release_group_id", ""), normalized["release_group_mbid"]),
+        (
+            embedded.get("musicbrainz_albumartist_id", ""),
+            normalized["albumartist_mbid"],
+        ),
+        (
+            embedded.get("musicbrainz_release_group_id", ""),
+            normalized["release_group_mbid"],
+        ),
         (embedded.get("artist_sort", ""), normalized["artist_sort"]),
         (embedded.get("albumartist_sort", ""), normalized["albumartist_sort"]),
         (embedded.get("track_total", ""), normalized["track_total"]),
@@ -130,7 +139,10 @@ def _details_need_update(audio_path: Path, details: dict[str, Any]) -> bool:
         (embedded.get("release_country", ""), normalized["release_country"]),
         (embedded.get("release_status", ""), normalized["release_status"]),
         (embedded.get("release_type", ""), normalized["release_type"]),
-        (embedded.get("release_secondary_types", ""), normalized["release_secondary_types"]),
+        (
+            embedded.get("release_secondary_types", ""),
+            normalized["release_secondary_types"],
+        ),
         (embedded.get("language", ""), normalized["language"]),
         (embedded.get("script", ""), normalized["script"]),
         (
@@ -170,7 +182,10 @@ def _details_need_update(audio_path: Path, details: dict[str, Any]) -> bool:
     ):
         return True
 
-    return bool(track_number) and str(xml_data.get("tracknumber", "") or "").strip() != track_number
+    return (
+        bool(track_number)
+        and str(xml_data.get("tracknumber", "") or "").strip() != track_number
+    )
 
 
 def _match_similarity(left: str, right: str) -> float | None:
@@ -184,7 +199,9 @@ def _reference_metadata(audio_path: Path) -> dict[str, str]:
     xml_data = load_song_metadata_xml(audio_path.with_suffix(".xml"))
     artist = str(embedded.get("artist") or "").strip()
     albumartist = str(embedded.get("albumartist") or "").strip()
-    xml_artist = str(xml_data.get("performingartist") or xml_data.get("artist") or "").strip()
+    xml_artist = str(
+        xml_data.get("performingartist") or xml_data.get("artist") or ""
+    ).strip()
     xml_albumartist = str(xml_data.get("albumartist") or "").strip()
     return {
         "title": str(embedded.get("title") or xml_data.get("title") or "").strip(),
@@ -196,28 +213,40 @@ def _reference_metadata(audio_path: Path) -> dict[str, str]:
 
 def _guardrail_assessment(audio_path: Path, match: dict[str, Any]) -> dict[str, Any]:
     reference = _reference_metadata(audio_path)
-    title_score = _match_similarity(reference.get("title", ""), str(match.get("title") or ""))
-    artist_score = max(
-        score
-        for score in (
-            _match_similarity(reference.get("artist", ""), str(match.get("artist") or "")),
-            _match_similarity(
-                reference.get("albumartist", ""),
-                str(match.get("albumartist") or match.get("artist") or ""),
-            ),
+    title_score = _match_similarity(
+        reference.get("title", ""), str(match.get("title") or "")
+    )
+    artist_score = (
+        max(
+            score
+            for score in (
+                _match_similarity(
+                    reference.get("artist", ""), str(match.get("artist") or "")
+                ),
+                _match_similarity(
+                    reference.get("albumartist", ""),
+                    str(match.get("albumartist") or match.get("artist") or ""),
+                ),
+            )
+            if score is not None
         )
-        if score is not None
-    ) if any(
-        score is not None
-        for score in (
-            _match_similarity(reference.get("artist", ""), str(match.get("artist") or "")),
-            _match_similarity(
-                reference.get("albumartist", ""),
-                str(match.get("albumartist") or match.get("artist") or ""),
-            ),
+        if any(
+            score is not None
+            for score in (
+                _match_similarity(
+                    reference.get("artist", ""), str(match.get("artist") or "")
+                ),
+                _match_similarity(
+                    reference.get("albumartist", ""),
+                    str(match.get("albumartist") or match.get("artist") or ""),
+                ),
+            )
         )
-    ) else None
-    album_score = _match_similarity(reference.get("album", ""), str(match.get("album") or ""))
+        else None
+    )
+    album_score = _match_similarity(
+        reference.get("album", ""), str(match.get("album") or "")
+    )
 
     weighted: list[tuple[float, float]] = []
     if title_score is not None:
@@ -291,7 +320,9 @@ def identify_tracks_by_audio(
 
     if selected_paths is not None:
         inventory_summary = None
-        candidates = selected_paths[:limit] if limit is not None else list(selected_paths)
+        candidates = (
+            selected_paths[:limit] if limit is not None else list(selected_paths)
+        )
         _emit(
             "  Using explicit selection of "
             f"{len(candidates)} audio file(s) for fingerprint lookup.",
@@ -332,10 +363,14 @@ def identify_tracks_by_audio(
         _emit(f"CHECK AUDIO ID: {index}/{len(candidates)}  {relative_path}", lines)
 
         try:
-            identified = service.identify_track(audio_path, musicbrainz_service=musicbrainz)
+            identified = service.identify_track(
+                audio_path, musicbrainz_service=musicbrainz
+            )
         except Exception as exc:
             failed += 1
-            _emit(f"ERROR: fingerprint lookup failed for {relative_path}  [{exc}]", lines)
+            _emit(
+                f"ERROR: fingerprint lookup failed for {relative_path}  [{exc}]", lines
+            )
             continue
 
         match = identified.get("match") if isinstance(identified, dict) else {}
@@ -360,7 +395,10 @@ def identify_tracks_by_audio(
                     ),
                 }
             )
-            _emit(f"WARN: no fingerprint or metadata match found for {relative_path}", lines)
+            _emit(
+                f"WARN: no fingerprint or metadata match found for {relative_path}",
+                lines,
+            )
             continue
 
         score = float(match.get("acoustid_score") or 0.0)
@@ -385,7 +423,9 @@ def identify_tracks_by_audio(
                         match.get("albumartist") or match.get("artist") or ""
                     ).strip(),
                     "artist_mbid": str(match.get("artist_mbid") or "").strip(),
-                    "albumartist_mbid": str(match.get("albumartist_mbid") or "").strip(),
+                    "albumartist_mbid": str(
+                        match.get("albumartist_mbid") or ""
+                    ).strip(),
                     "track_number": match.get("track_number"),
                     "message": (
                         "Needs manual review before metadata can be trusted. "
@@ -419,7 +459,9 @@ def identify_tracks_by_audio(
                         match.get("albumartist") or match.get("artist") or ""
                     ).strip(),
                     "artist_mbid": str(match.get("artist_mbid") or "").strip(),
-                    "albumartist_mbid": str(match.get("albumartist_mbid") or "").strip(),
+                    "albumartist_mbid": str(
+                        match.get("albumartist_mbid") or ""
+                    ).strip(),
                     "track_number": match.get("track_number"),
                     "title_score": guardrail["title_score"],
                     "artist_score": guardrail["artist_score"],
@@ -446,7 +488,9 @@ def identify_tracks_by_audio(
             skipped += 1
             if not dry_run:
                 record_musicbrainz_verification(library_index_db, audio_path, root=root)
-            _emit(f"SKIP: already matches fingerprint result for {relative_path}", lines)
+            _emit(
+                f"SKIP: already matches fingerprint result for {relative_path}", lines
+            )
             continue
 
         if dry_run:
@@ -463,13 +507,18 @@ def identify_tracks_by_audio(
         try:
             _write_tags(audio_path, match)
             preserved = _preserved_xml_fields(audio_path)
-            source = preserved["source"] or f"https://musicbrainz.org/recording/{match['recording_mbid']}"
+            source = (
+                preserved["source"]
+                or f"https://musicbrainz.org/recording/{match['recording_mbid']}"
+            )
             write_song_metadata_xml(
                 audio_path,
                 title=str(match.get("title") or audio_path.stem).strip(),
                 artist=str(match.get("artist") or "").strip(),
                 album=str(match.get("album") or "").strip(),
-                album_artist=str(match.get("albumartist") or match.get("artist") or "").strip(),
+                album_artist=str(
+                    match.get("albumartist") or match.get("artist") or ""
+                ).strip(),
                 track_number=match.get("track_number"),
                 provider=preserved["provider"],
                 downloaded_from=preserved["downloaded_from"],
@@ -487,7 +536,10 @@ def identify_tracks_by_audio(
             record_musicbrainz_verification(library_index_db, audio_path, root=root)
         except Exception as exc:
             failed += 1
-            _emit(f"ERROR: could not write updated metadata for {relative_path}  [{exc}]", lines)
+            _emit(
+                f"ERROR: could not write updated metadata for {relative_path}  [{exc}]",
+                lines,
+            )
             continue
 
         updated += 1
@@ -539,9 +591,15 @@ def identify_tracks_by_audio(
                     "low_confidence_count": len(low_confidence_items),
                     "no_match_count": len(no_match_items),
                     "recorded_count": len(recorded_review_items),
-                    "truncated_count": max(0, len(review_items) - len(recorded_review_items)),
-                    "low_confidence_items": recorded_review_items[: len(low_confidence_items)],
-                    "no_match_items": recorded_review_items[len(low_confidence_items) :],
+                    "truncated_count": max(
+                        0, len(review_items) - len(recorded_review_items)
+                    ),
+                    "low_confidence_items": recorded_review_items[
+                        : len(low_confidence_items)
+                    ],
+                    "no_match_items": recorded_review_items[
+                        len(low_confidence_items) :
+                    ],
                 },
             },
         )

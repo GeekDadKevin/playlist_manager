@@ -81,7 +81,10 @@ def test_listenbrainz_service_lists_createdfor_and_user_playlists() -> None:
 
     playlists = service.list_playlists()
 
-    assert [item["title"] for item in playlists] == ["Created For You Mix", "My Favorites"]
+    assert [item["title"] for item in playlists] == [
+        "Created For You Mix",
+        "My Favorites",
+    ]
     assert playlists[0]["source"] == "createdfor"
     assert playlists[1]["source"] == "user"
     assert playlists[0]["jspf_url"].endswith("/export/jspf")

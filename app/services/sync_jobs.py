@@ -86,7 +86,14 @@ def start_sync_job(
 
     worker = Thread(
         target=_run_sync_job,
-        args=(job_id, upload, service, max_tracks, navidrome_playlists_dir, playlist_db_path),
+        args=(
+            job_id,
+            upload,
+            service,
+            max_tracks,
+            navidrome_playlists_dir,
+            playlist_db_path,
+        ),
         daemon=True,
         name=f"sync-job-{job_id[:8]}",
     )
@@ -110,7 +117,9 @@ def search_low_confidence_candidates(
 ) -> dict[str, Any]:
     item, service = _get_review_item(job_id, item_index)
     track = _track_from_item(item, title=title, artist=artist, album=album)
-    candidates = service.search_track(track, limit=8, include_soundcloud=True, include_youtube=True)
+    candidates = service.search_track(
+        track, limit=8, include_soundcloud=True, include_youtube=True
+    )
 
     with _JOBS_LOCK:
         job = _require_job_unlocked(job_id)
@@ -118,7 +127,9 @@ def search_low_confidence_candidates(
         target = results[item_index - 1]
         target["track"] = track.to_dict()
         target["queries"] = (
-            list(candidates[0].get("queries", [])) if candidates else target.get("queries", [])
+            list(candidates[0].get("queries", []))
+            if candidates
+            else target.get("queries", [])
         )
         target["candidates"] = candidates[:8]
         target["match"] = candidates[0] if candidates else {}
@@ -157,7 +168,8 @@ def resolve_low_confidence_candidate(
         (
             candidate
             for candidate in candidates
-            if str(candidate.get("deezer_id") or candidate.get("id") or "") == str(deezer_id)
+            if str(candidate.get("deezer_id") or candidate.get("id") or "")
+            == str(deezer_id)
         ),
         None,
     )
@@ -194,7 +206,9 @@ def skip_low_confidence_candidate(
         target["track"] = track.to_dict()
         target["status"] = "not_found"
         target["review_candidates_ready"] = True
-        target["message"] = "Skipped during manual review. The track will stay missing for now."
+        target["message"] = (
+            "Skipped during manual review. The track will stay missing for now."
+        )
         target["completed_at"] = _utc_timestamp()
         _refresh_job_state_unlocked(job_id)
         return deepcopy(job)
@@ -254,12 +268,16 @@ def download_selected_low_confidence_candidates(
     with _JOBS_LOCK:
         snapshot = deepcopy(_require_job_unlocked(job_id))
 
-    summary["remaining"] = int(snapshot.get("sync", {}).get("summary", {}).get("low_confidence", 0))
+    summary["remaining"] = int(
+        snapshot.get("sync", {}).get("summary", {}).get("low_confidence", 0)
+    )
     snapshot["bulk_summary"] = summary
     return snapshot
 
 
-def _should_prepare_review_candidates(service: SyncService, sync_result: dict[str, Any]) -> bool:
+def _should_prepare_review_candidates(
+    service: SyncService, sync_result: dict[str, Any]
+) -> bool:
     soundcloud_service = getattr(service, "soundcloud_service", None)
     youtube_service = getattr(service, "youtube_service", None)
     has_fallbacks = False
@@ -341,16 +359,26 @@ def _prepare_review_candidates_for_item(
     item: dict[str, Any],
 ) -> dict[str, Any]:
     track = _track_from_item(item)
-    track_label = f"{track.artist or 'Unknown artist'} — {track.title or 'Unknown title'}"
+    track_label = (
+        f"{track.artist or 'Unknown artist'} — {track.title or 'Unknown title'}"
+    )
     existing_candidates = [
-        candidate for candidate in list(item.get("candidates", [])) if isinstance(candidate, dict)
+        candidate
+        for candidate in list(item.get("candidates", []))
+        if isinstance(candidate, dict)
     ]
-    if not existing_candidates and isinstance(item.get("match"), dict) and item["match"]:
+    if (
+        not existing_candidates
+        and isinstance(item.get("match"), dict)
+        and item["match"]
+    ):
         existing_candidates = [dict(item["match"])]
 
     if not existing_candidates:
         try:
-            existing_candidates = service.search_track(track, limit=4, include_soundcloud=False)
+            existing_candidates = service.search_track(
+                track, limit=4, include_soundcloud=False
+            )
         except Exception:
             existing_candidates = []
 
@@ -358,9 +386,13 @@ def _prepare_review_candidates_for_item(
     if soundcloud_service is None or not soundcloud_service.is_configured():
         soundcloud_candidates: list[dict[str, Any]] = []
     else:
-        soundcloud_candidates = soundcloud_service.search_track(track, limit=4, max_queries=1)
+        soundcloud_candidates = soundcloud_service.search_track(
+            track, limit=4, max_queries=1
+        )
         if not soundcloud_candidates:
-            soundcloud_candidates = soundcloud_service.search_track(track, limit=4, max_queries=3)
+            soundcloud_candidates = soundcloud_service.search_track(
+                track, limit=4, max_queries=3
+            )
 
     youtube_service = getattr(service, "youtube_service", None)
     if youtube_service is None or not youtube_service.is_configured():
@@ -368,7 +400,9 @@ def _prepare_review_candidates_for_item(
     else:
         youtube_candidates = youtube_service.search_track(track, limit=4, max_queries=1)
         if not youtube_candidates:
-            youtube_candidates = youtube_service.search_track(track, limit=4, max_queries=3)
+            youtube_candidates = youtube_service.search_track(
+                track, limit=4, max_queries=3
+            )
 
     candidates = _merge_review_candidates(existing_candidates, soundcloud_candidates)
     candidates = _merge_review_candidates(candidates, youtube_candidates)
@@ -408,7 +442,11 @@ def _prepare_low_confidence_review_candidates(
     total = len(pending_items)
     if total == 0:
         sync_result["review_preparing"] = False
-        sync_result["review_search_status"] = {"completed": 0, "total": 0, "current_track": ""}
+        sync_result["review_search_status"] = {
+            "completed": 0,
+            "total": 0,
+            "current_track": "",
+        }
         return sync_result
 
     sync_result["review_preparing"] = True
@@ -420,9 +458,13 @@ def _prepare_low_confidence_review_candidates(
     _update_progress(job_id, sync_result)
 
     max_workers = min(4, total)
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="review-preload") as pool:
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="review-preload"
+    ) as pool:
         future_map = {
-            pool.submit(_prepare_review_candidates_for_item, service, item_index, item): item_index
+            pool.submit(
+                _prepare_review_candidates_for_item, service, item_index, item
+            ): item_index
             for item_index, item in pending_items
         }
         completed = 0
@@ -433,9 +475,7 @@ def _prepare_low_confidence_review_candidates(
                 prepared = future.result()
             except Exception as exc:
                 track = _track_from_item(target)
-                track_label = (
-                    f"{track.artist or 'Unknown artist'} — {track.title or 'Unknown title'}"
-                )
+                track_label = f"{track.artist or 'Unknown artist'} — {track.title or 'Unknown title'}"
                 target["track"] = track.to_dict()
                 target["review_candidates_ready"] = True
                 target["message"] = f"Could not pre-load fallback matches: {exc}"
@@ -470,18 +510,27 @@ def export_sync_job_playlist(job_id: str) -> dict[str, Any]:
     with _JOBS_LOCK:
         job = _require_job_unlocked(job_id)
         context = _JOB_CONTEXT.get(job_id, {})
-        navidrome_playlists_dir = str(context.get("navidrome_playlists_dir", "")).strip()
+        navidrome_playlists_dir = str(
+            context.get("navidrome_playlists_dir", "")
+        ).strip()
         if not navidrome_playlists_dir:
-            raise ValueError("Set `NAVIDROME_PLAYLIST_DIR` to enable Navidrome playlist export.")
+            raise ValueError(
+                "Set `NAVIDROME_PLAYLIST_DIR` to enable Navidrome playlist export."
+            )
         if str(job.get("status", "")) != "completed":
-            raise ValueError("Wait for the sync job to finish before exporting the playlist.")
+            raise ValueError(
+                "Wait for the sync job to finish before exporting the playlist."
+            )
 
         results = list(job.get("sync", {}).get("results", []))
         summary = _summarize_results(
-            results, requested=job.get("sync", {}).get("summary", {}).get("requested", 0)
+            results,
+            requested=job.get("sync", {}).get("summary", {}).get("requested", 0),
         )
         if summary.get("low_confidence", 0):
-            raise ValueError("Resolve the low-confidence tracks before exporting this playlist.")
+            raise ValueError(
+                "Resolve the low-confidence tracks before exporting this playlist."
+            )
 
         playlist_name = str(
             job.get("upload", {}).get("playlist_name")
@@ -544,7 +593,9 @@ def _run_sync_job(
     )
 
     if _should_prepare_review_candidates(service, final_result):
-        final_result = _prepare_low_confidence_review_candidates(job_id, final_result, service)
+        final_result = _prepare_low_confidence_review_candidates(
+            job_id, final_result, service
+        )
         final_result["summary"] = _summarize_results(
             final_result.get("results", []),
             requested=final_result.get("summary", {}).get("requested", 0),
@@ -614,7 +665,9 @@ def _update_job(job_id: str, values: dict[str, Any]) -> None:
         _JOBS[job_id].update(values)
 
 
-def _get_review_item(job_id: str, item_index: int) -> tuple[dict[str, Any], SyncService]:
+def _get_review_item(
+    job_id: str, item_index: int
+) -> tuple[dict[str, Any], SyncService]:
     if item_index <= 0:
         raise ValueError("Choose a valid track to review.")
 
@@ -628,7 +681,9 @@ def _get_review_item(job_id: str, item_index: int) -> tuple[dict[str, Any], Sync
         service = context.get("service")
 
     if service is None:
-        raise ValueError("This sync job no longer has an active Deezer session for review.")
+        raise ValueError(
+            "This sync job no longer has an active Deezer session for review."
+        )
     return item, service
 
 
@@ -647,7 +702,9 @@ def _track_from_item(
         track_number=track.get("track_number"),
         duration_seconds=track.get("duration_seconds"),
         source=str(track.get("source", "")).strip(),
-        extra=dict(track.get("extra", {})) if isinstance(track.get("extra"), dict) else {},
+        extra=(
+            dict(track.get("extra", {})) if isinstance(track.get("extra"), dict) else {}
+        ),
     )
 
 
@@ -658,7 +715,9 @@ def _require_job_unlocked(job_id: str) -> dict[str, Any]:
     return job
 
 
-def _summarize_results(results: list[dict[str, Any]], requested: Any = 0) -> dict[str, int]:
+def _summarize_results(
+    results: list[dict[str, Any]], requested: Any = 0
+) -> dict[str, int]:
     summary = {
         "requested": int(requested or len(results)),
         "processed": len(results),
@@ -735,7 +794,9 @@ def _pending_or_ready_export_result(
     summary: dict[str, Any],
 ) -> dict[str, Any]:
     pending_review = int(summary.get("low_confidence", 0)) > 0
-    playable_count = int(summary.get("downloaded", 0)) + int(summary.get("already_available", 0))
+    playable_count = int(summary.get("downloaded", 0)) + int(
+        summary.get("already_available", 0)
+    )
     missing_count = (
         int(summary.get("not_found", 0))
         + int(summary.get("failed", 0))

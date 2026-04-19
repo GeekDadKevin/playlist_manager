@@ -15,6 +15,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/check_audio_health_<timestamp>.log
 (or cwd if the root is not writable).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -79,44 +80,49 @@ def check_library(
     )
     _emit("=" * 72, lines)
     if dry_run:
-        _emit("[DRY-RUN] This tool is read-only; dry-run behaves the same as a normal scan.", lines)
+        _emit(
+            "[DRY-RUN] This tool is read-only; dry-run behaves the same as a normal scan.",
+            lines,
+        )
 
     if ffmpeg_path:
         _emit(f"  Validation mode: ffmpeg decode check ({ffmpeg_path})", lines)
     else:
         _emit("  Validation mode: mutagen parser only (ffmpeg not found)", lines)
-        _emit("  WARN: parser-only mode can miss corruption that ffmpeg decode would catch.", lines)
+        _emit(
+            "  WARN: parser-only mode can miss corruption that ffmpeg decode would catch.",
+            lines,
+        )
 
     if selected_paths is not None:
-        audio_files = selected_paths[:limit] if limit is not None else list(selected_paths)
+        audio_files = (
+            selected_paths[:limit] if limit is not None else list(selected_paths)
+        )
         total_found = len(audio_files)
-        _emit(f"  Using explicit selection of {total_found} audio file(s).", lines)
+        _emit(f"PROGRESS: using explicit selection of {total_found} audio file(s).", lines)
     else:
+        _emit(f"PROGRESS: querying DB for indexed audio files...", lines)
         total_found = count_indexed_audio_files(library_index_db, root)
+        _emit(f"PROGRESS: selecting candidate files for health check...", lines)
         audio_files = list_audio_health_candidates(
             library_index_db,
             root,
             force_full=full_scan,
             limit=limit,
         )
-        _emit(
-            f"  Found {total_found} indexed audio file(s); scanning {len(audio_files)} candidate file(s) (from DB).",
-            lines,
-        )
+        _emit(f"PROGRESS: found {total_found} indexed audio file(s); scanning {len(audio_files)} candidate file(s) (from DB).", lines)
 
     ok_count = 0
     warning_count = 0
     error_count = 0
 
+    if audio_files:
+        _emit(f"PROGRESS: starting audio health check for {len(audio_files)} files...", lines)
     for index, audio_path in enumerate(audio_files, start=1):
         relative_path = audio_path.relative_to(root)
+        if index == 1 or index % 100 == 0 or index == len(audio_files):
+            _emit(f"PROGRESS: checked {index}/{len(audio_files)} files (errors={error_count}, warnings={warning_count})", lines)
         _emit(f"CHECK: {index}/{len(audio_files)}  {relative_path}", lines)
-        if index % 100 == 0:
-            _emit(
-                f"  ... scanned {index}/{len(audio_files)} files "
-                f"(errors={error_count}, warnings={warning_count})",
-                lines,
-            )
 
         result = check_audio_file(audio_path, ffmpeg_path=ffmpeg_path)
         record_audio_health_result(
@@ -229,7 +235,8 @@ def main() -> int:
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_name = f"check_audio_health_{log_ts}.log"
-    log_dir = root if os.access(root, os.W_OK) else Path.cwd()
+    log_dir = Path(__file__).resolve().parent.parent / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / log_name
 
     try:

@@ -1,7 +1,9 @@
 """Minimal startup smoke check for Docker health and CI."""
+
 import sys
 import time
 import http.client
+
 
 def check_health(port=3000, path="/api/health", timeout=10):
     deadline = time.time() + timeout
@@ -20,6 +22,7 @@ def check_health(port=3000, path="/api/health", timeout=10):
         time.sleep(1)
     print("Healthcheck timed out.")
     return 1
+
 
 if __name__ == "__main__":
     sys.exit(check_health())

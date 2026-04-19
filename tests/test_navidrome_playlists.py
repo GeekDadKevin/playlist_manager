@@ -9,7 +9,9 @@ def test_export_navidrome_playlist_writes_stable_weekly_file_and_removes_old_var
 ) -> None:
     monkeypatch.delenv("NAVIDROME_MUSIC_ROOT", raising=False)
     monkeypatch.delenv("NAVIDROME_M3U_PATH_PREFIX", raising=False)
-    legacy_file = tmp_path / "weekly-exploration-for-geekdadkevin-week-of-2026-03-30-mon.m3u"
+    legacy_file = (
+        tmp_path / "weekly-exploration-for-geekdadkevin-week-of-2026-03-30-mon.m3u"
+    )
     legacy_file.write_text("#EXTM3U\nlegacy.mp3\n", encoding="utf-8")
 
     result = export_navidrome_playlist(
@@ -50,7 +52,10 @@ def test_export_navidrome_playlist_writes_stable_weekly_file_and_removes_old_var
     written = (tmp_path / "Weekly Exploration.m3u").read_text(encoding="utf-8")
     assert "#EXTM3U" in written
     assert "Taylor Swift/1989/01 - Shake It Off.flac" in written
-    assert "Theory of a Deadman/Scars & Souvenirs (Special Edition)/05 - Crutch (1).mp3" in written
+    assert (
+        "Theory of a Deadman/Scars & Souvenirs (Special Edition)/05 - Crutch (1).mp3"
+        in written
+    )
 
 
 def test_export_navidrome_playlist_keeps_missing_tracks_as_comments(tmp_path) -> None:

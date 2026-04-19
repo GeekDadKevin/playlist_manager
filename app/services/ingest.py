@@ -53,7 +53,9 @@ def save_uploaded_playlist(
     return cache_upload(upload)
 
 
-def load_saved_playlist(upload_folder: str | Path, saved_path: str | Path) -> PlaylistUpload:
+def load_saved_playlist(
+    upload_folder: str | Path, saved_path: str | Path
+) -> PlaylistUpload:
     saved_path_text = str(saved_path).strip()
     cached_upload = get_cached_upload(saved_path_text)
     if cached_upload is not None:
@@ -114,7 +116,9 @@ def fetch_remote_jspf(
         if callable(resolve_fetch_url):
             remote_url = str(resolve_fetch_url(raw_url))
         elif raw_url:
-            remote_url = build_listenbrainz_api_url(raw_url) or normalize_listenbrainz_url(raw_url)
+            remote_url = build_listenbrainz_api_url(
+                raw_url
+            ) or normalize_listenbrainz_url(raw_url)
         else:
             remote_url = ""
     else:
@@ -123,7 +127,9 @@ def fetch_remote_jspf(
                 "Provide a ListenBrainz playlist URL, playlist ID, or JSPF export URL."
             )
 
-        normalized_url = build_listenbrainz_api_url(raw_url) or normalize_listenbrainz_url(raw_url)
+        normalized_url = build_listenbrainz_api_url(
+            raw_url
+        ) or normalize_listenbrainz_url(raw_url)
         with httpx.Client(follow_redirects=True, timeout=15.0) as client:
             response = client.get(normalized_url)
             response.raise_for_status()
@@ -139,7 +145,9 @@ def fetch_remote_jspf(
         remote_url = normalized_url
 
     if not tracks:
-        raise ValueError("The ListenBrainz playlist did not contain any readable tracks.")
+        raise ValueError(
+            "The ListenBrainz playlist did not contain any readable tracks."
+        )
 
     _ = upload_folder
     stored_name = _build_stored_filename("listenbrainz.jspf")
@@ -163,9 +171,13 @@ def find_imported_listenbrainz_playlist_ids(
 
     if playlist_db_path:
         try:
-            from app.services.playlist_history import find_recorded_listenbrainz_playlist_ids
+            from app.services.playlist_history import (
+                find_recorded_listenbrainz_playlist_ids,
+            )
 
-            imported_ids.update(find_recorded_listenbrainz_playlist_ids(playlist_db_path))
+            imported_ids.update(
+                find_recorded_listenbrainz_playlist_ids(playlist_db_path)
+            )
         except Exception:
             pass
 
@@ -184,7 +196,9 @@ def find_imported_listenbrainz_playlist_ids(
             if not isinstance(playlist, dict):
                 continue
 
-            playlist_id = extract_listenbrainz_playlist_id(str(playlist.get("identifier", "")))
+            playlist_id = extract_listenbrainz_playlist_id(
+                str(playlist.get("identifier", ""))
+            )
             if playlist_id:
                 imported_ids.add(playlist_id.lower())
 
@@ -225,7 +239,11 @@ def _detect_playlist_name(filename: str, payload: bytes | str | dict) -> str:
         return fallback
 
     if isinstance(parsed, dict):
-        playlist = parsed.get("playlist") if isinstance(parsed.get("playlist"), dict) else parsed
+        playlist = (
+            parsed.get("playlist")
+            if isinstance(parsed.get("playlist"), dict)
+            else parsed
+        )
     else:
         playlist = {}
 

@@ -19,7 +19,9 @@ def _load_enrich_module():
     return module
 
 
-def test_enrich_musicbrainz_tags_uses_directory_artist_fallback(tmp_path, monkeypatch) -> None:
+def test_enrich_musicbrainz_tags_uses_directory_artist_fallback(
+    tmp_path, monkeypatch
+) -> None:
     enrich_module = _load_enrich_module()
     audio_path = tmp_path / "Burial" / "Untrue" / "Archangel.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +34,9 @@ def test_enrich_musicbrainz_tags_uses_directory_artist_fallback(tmp_path, monkey
         def from_config(config):
             return FakeListenBrainzService()
 
-        def lookup_recording_metadata(self, *, artist_name, recording_name, release_name=""):
+        def lookup_recording_metadata(
+            self, *, artist_name, recording_name, release_name=""
+        ):
             return {}
 
     class FakeMusicBrainzService:
@@ -118,7 +122,9 @@ def test_enrich_musicbrainz_tags_uses_directory_artist_fallback(tmp_path, monkey
     assert any("UPDATED:" in line for line in lines)
 
 
-def test_enrich_musicbrainz_tags_reports_unresolved_files(tmp_path, monkeypatch) -> None:
+def test_enrich_musicbrainz_tags_reports_unresolved_files(
+    tmp_path, monkeypatch
+) -> None:
     enrich_module = _load_enrich_module()
     audio_path = tmp_path / "Burial" / "Untrue" / "Archangel.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,7 +136,9 @@ def test_enrich_musicbrainz_tags_reports_unresolved_files(tmp_path, monkeypatch)
         def from_config(config):
             return FakeListenBrainzService()
 
-        def lookup_recording_metadata(self, *, artist_name, recording_name, release_name=""):
+        def lookup_recording_metadata(
+            self, *, artist_name, recording_name, release_name=""
+        ):
             return {}
 
     class FakeMusicBrainzService:
@@ -212,7 +220,9 @@ def test_enrich_musicbrainz_tags_falls_back_to_direct_musicbrainz_metadata(
         def from_config(config):
             return FakeListenBrainzService()
 
-        def lookup_recording_metadata(self, *, artist_name, recording_name, release_name=""):
+        def lookup_recording_metadata(
+            self, *, artist_name, recording_name, release_name=""
+        ):
             return {}
 
     class FakeMusicBrainzService:

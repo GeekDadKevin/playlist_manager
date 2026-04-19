@@ -10,8 +10,14 @@ from typing import Any
 
 from app.models import PlaylistTrack
 from app.services.deezer_download import DeezerDownloadService
-from app.services.library_index import init_library_index, refresh_library_index_for_paths
-from app.services.song_metadata import load_embedded_audio_metadata, load_song_metadata_xml
+from app.services.library_index import (
+    init_library_index,
+    refresh_library_index_for_paths,
+)
+from app.services.song_metadata import (
+    load_embedded_audio_metadata,
+    load_song_metadata_xml,
+)
 from app.services.tool_output import emit_console_line
 
 CATALOG_FILTERS: list[tuple[str, str]] = [
@@ -43,32 +49,39 @@ _SORT_COLUMNS = {
     "integrity": "audio_health_status",
     "updated": "updated_at",
 }
-_MISSING_INFO_SQL = "(" + " OR ".join(
-    [
-        "embedded_title = ''",
-        "embedded_artist = ''",
-        "embedded_album = ''",
-        "embedded_albumartist = ''",
-        "embedded_track_number = ''",
-        "embedded_musicbrainz_album_id = ''",
-        "embedded_musicbrainz_artist_id = ''",
-        "embedded_musicbrainz_albumartist_id = ''",
-        "embedded_musicbrainz_track_id = ''",
-    ]
-) + ")"
+_MISSING_INFO_SQL = (
+    "("
+    + " OR ".join(
+        [
+            "embedded_title = ''",
+            "embedded_artist = ''",
+            "embedded_album = ''",
+            "embedded_albumartist = ''",
+            "embedded_track_number = ''",
+            "embedded_musicbrainz_album_id = ''",
+            "embedded_musicbrainz_artist_id = ''",
+            "embedded_musicbrainz_albumartist_id = ''",
+            "embedded_musicbrainz_track_id = ''",
+        ]
+    )
+    + ")"
+)
 _INCOMPLETE_XML_SQL = (
     "xml_exists = 1 AND (xml_has_title = 0 OR xml_has_artist = 0 OR xml_has_album = 0 OR "
     "xml_has_downloaded_from = 0 OR xml_has_musicbrainz_track_id = 0 OR "
     "(downloaded_from = 'deezer' AND xml_has_deezer_id = 0))"
 )
-_UNCHECKED_AUDIO_SQL = "(audio_health_checked_at = '' OR audio_health_checked_at < modified_at)"
+_UNCHECKED_AUDIO_SQL = (
+    "(audio_health_checked_at = '' OR audio_health_checked_at < modified_at)"
+)
 _MUSICBRAINZ_PENDING_SQL = (
     "(identify_audio_review_status != 'accepted-as-is' AND "
     "(musicbrainz_verified_at = '' OR musicbrainz_verified_at < modified_at))"
 )
 _ACCEPTED_AS_IS_SQL = "(identify_audio_review_status = 'accepted-as-is')"
 _ANY_ANOMALY_SQL = (
-    "(" + " OR ".join(
+    "("
+    + " OR ".join(
         [
             _MISSING_INFO_SQL,
             _MUSICBRAINZ_PENDING_SQL,
@@ -79,7 +92,8 @@ _ANY_ANOMALY_SQL = (
             "downloaded_from NOT IN ('', 'unknown', 'deezer')",
             _UNCHECKED_AUDIO_SQL,
         ]
-    ) + ")"
+    )
+    + ")"
 )
 
 
@@ -222,7 +236,9 @@ def run_catalog_batch_action(
     if action not in _BATCH_ACTIONS:
         raise ValueError("Unknown batch action.")
 
-    music_root = Path(str(config.get("NAVIDROME_MUSIC_ROOT", "")).strip()).expanduser().resolve()
+    music_root = (
+        Path(str(config.get("NAVIDROME_MUSIC_ROOT", "")).strip()).expanduser().resolve()
+    )
     if not music_root.is_dir():
         raise ValueError("NAVIDROME_MUSIC_ROOT is not configured correctly.")
 
@@ -236,7 +252,9 @@ def run_catalog_batch_action(
 
     result: dict[str, Any]
     if action == "redownload":
-        result = _redownload_selected_tracks(config, music_root, selected_paths, dry_run=dry_run)
+        result = _redownload_selected_tracks(
+            config, music_root, selected_paths, dry_run=dry_run
+        )
     else:
         module_name, func_name, kwargs = _batch_tool_target(action, selected_paths)
         module = _load_script_module(module_name)
@@ -267,9 +285,15 @@ def run_catalog_batch_action(
     return result
 
 
-def _batch_tool_target(action: str, selected_paths: list[Path]) -> tuple[str, str, dict[str, Any]]:
+def _batch_tool_target(
+    action: str, selected_paths: list[Path]
+) -> tuple[str, str, dict[str, Any]]:
     if action == "check-audio":
-        return "check_audio_health.py", "check_library", {"selected_paths": selected_paths}
+        return (
+            "check_audio_health.py",
+            "check_library",
+            {"selected_paths": selected_paths},
+        )
     if action == "fix-tags":
         return "fix_audio_tags.py", "fix_tags", {"selected_paths": selected_paths}
     if action == "identify-structure":
@@ -285,7 +309,11 @@ def _batch_tool_target(action: str, selected_paths: list[Path]) -> tuple[str, st
             {"selected_paths": selected_paths},
         )
     if action == "sync-xml":
-        return "rebuild_song_xml.py", "rebuild", {"selected_audio_paths": selected_paths}
+        return (
+            "rebuild_song_xml.py",
+            "rebuild",
+            {"selected_audio_paths": selected_paths},
+        )
     raise ValueError("Unknown batch action.")
 
 
@@ -315,7 +343,9 @@ def _redownload_selected_tracks(
         embedded = load_embedded_audio_metadata(audio_path)
         xml_data = load_song_metadata_xml(audio_path.with_suffix(".xml"))
         track = PlaylistTrack(
-            title=str(embedded.get("title") or xml_data.get("title") or audio_path.stem).strip(),
+            title=str(
+                embedded.get("title") or xml_data.get("title") or audio_path.stem
+            ).strip(),
             artist=str(
                 embedded.get("artist")
                 or embedded.get("albumartist")
@@ -323,12 +353,16 @@ def _redownload_selected_tracks(
                 or xml_data.get("artist")
                 or ""
             ).strip(),
-            album=str(embedded.get("album") or xml_data.get("albumtitle") or "").strip(),
+            album=str(
+                embedded.get("album") or xml_data.get("albumtitle") or ""
+            ).strip(),
             source=str(audio_path),
         )
         if embedded.get("track_number"):
             try:
-                track.track_number = int(str(embedded.get("track_number") or "").split("/", 1)[0])
+                track.track_number = int(
+                    str(embedded.get("track_number") or "").split("/", 1)[0]
+                )
             except ValueError:
                 track.track_number = None
 
@@ -353,7 +387,8 @@ def _redownload_selected_tracks(
                 (
                     candidate
                     for candidate in candidates
-                    if str(candidate.get("deezer_id") or "").strip() == preferred_deezer_id
+                    if str(candidate.get("deezer_id") or "").strip()
+                    == preferred_deezer_id
                 ),
                 None,
             )
@@ -474,7 +509,9 @@ def _row_anomalies(row: sqlite3.Row) -> list[dict[str, str]]:
             }
         )
     if int(row["xml_exists"] or 0) == 0:
-        anomalies.append({"label": "Missing XML", "tone": "muted", "detail": "No sidecar XML"})
+        anomalies.append(
+            {"label": "Missing XML", "tone": "muted", "detail": "No sidecar XML"}
+        )
     elif _row_has_incomplete_xml(row):
         anomalies.append(
             {
@@ -492,11 +529,17 @@ def _row_anomalies(row: sqlite3.Row) -> list[dict[str, str]]:
                 "detail": str(row["downloaded_from"] or "unknown"),
             }
         )
-    if not str(row["audio_health_checked_at"] or "").strip() or str(
-        row["audio_health_checked_at"] or ""
-    ).strip() < str(row["modified_at"] or "").strip():
+    if (
+        not str(row["audio_health_checked_at"] or "").strip()
+        or str(row["audio_health_checked_at"] or "").strip()
+        < str(row["modified_at"] or "").strip()
+    ):
         anomalies.append(
-            {"label": "Unchecked", "tone": "muted", "detail": "Integrity scan is missing or stale"}
+            {
+                "label": "Unchecked",
+                "tone": "muted",
+                "detail": "Integrity scan is missing or stale",
+            }
         )
     return anomalies
 
@@ -627,7 +670,9 @@ def _summary_line(lines: list[str]) -> str:
     return lines[-1] if lines else ""
 
 
-def _save_last_catalog_batch_result(data_dir: str | Path, result: dict[str, Any]) -> None:
+def _save_last_catalog_batch_result(
+    data_dir: str | Path, result: dict[str, Any]
+) -> None:
     path = Path(data_dir) / "catalog_batch_last_run.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -636,7 +681,9 @@ def _save_last_catalog_batch_result(data_dir: str | Path, result: dict[str, Any]
 def _load_script_module(script_name: str):
     scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
     module_path = scripts_dir / script_name
-    spec = importlib.util.spec_from_file_location(f"catalog_batch_{module_path.stem}", module_path)
+    spec = importlib.util.spec_from_file_location(
+        f"catalog_batch_{module_path.stem}", module_path
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Could not load {script_name}")
     module = importlib.util.module_from_spec(spec)

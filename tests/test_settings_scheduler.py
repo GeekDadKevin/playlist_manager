@@ -57,7 +57,9 @@ def test_settings_page_uses_config_defaults_for_fallback_toggles(tmp_path) -> No
         YOUTUBE_FALLBACK_ENABLED="1",
         DOWNLOAD_THREADS=3,
     )
-    (tmp_path / "settings.json").write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"theme": "dark"}), encoding="utf-8"
+    )
 
     client = app.test_client()
     response = client.get("/settings")
@@ -128,8 +130,7 @@ def test_index_keeps_weekly_targets_visible_even_if_previously_imported(
     record_playlist_run(
         app.config["PLAYLIST_DB_PATH"],
         playlist_name=(
-            "Weekly Exploration for geekdadkevin, "
-            "week of 2026-04-06 Mon"
+            "Weekly Exploration for geekdadkevin, " "week of 2026-04-06 Mon"
         ),
         source_kind="remote-jspf",
         original_name="listenbrainz.jspf",

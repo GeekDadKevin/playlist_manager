@@ -21,7 +21,9 @@ def _load_structure_module():
     return module
 
 
-def test_identify_tracks_from_layout_uses_catalog_candidates(tmp_path, monkeypatch) -> None:
+def test_identify_tracks_from_layout_uses_catalog_candidates(
+    tmp_path, monkeypatch
+) -> None:
     layout_module = _load_structure_module()
     audio_path = (
         tmp_path
@@ -37,7 +39,9 @@ def test_identify_tracks_from_layout_uses_catalog_candidates(tmp_path, monkeypat
     monkeypatch.setattr(
         layout_module,
         "write_musicbrainz_tags",
-        lambda path, details: captured.setdefault("written", []).append((path, details)),
+        lambda path, details: captured.setdefault("written", []).append(
+            (path, details)
+        ),
     )
 
     db_path = tmp_path / "library_index.db"
@@ -60,9 +64,13 @@ def test_identify_tracks_from_layout_uses_catalog_candidates(tmp_path, monkeypat
     assert written[0][1]["track_number"] == "2"
 
 
-def test_identify_tracks_from_layout_refresh_respects_limit(tmp_path, monkeypatch) -> None:
+def test_identify_tracks_from_layout_refresh_respects_limit(
+    tmp_path, monkeypatch
+) -> None:
     layout_module = _load_structure_module()
-    audio_path = tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    audio_path = (
+        tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    )
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"fake-audio")
     captured_limits: list[int | None] = []
@@ -83,13 +91,17 @@ def test_identify_tracks_from_layout_refresh_respects_limit(tmp_path, monkeypatc
             "xml_scan_skipped": int(kwargs.get("scan_xml_sidecars") is False),
         }
 
-    monkeypatch.setattr(layout_module, "refresh_library_index", fake_refresh_library_index)
+    monkeypatch.setattr(
+        layout_module, "refresh_library_index", fake_refresh_library_index
+    )
     monkeypatch.setattr(
         layout_module,
         "list_structure_tag_candidates",
         lambda *args, **kwargs: [audio_path],
     )
-    monkeypatch.setattr(layout_module, "write_musicbrainz_tags", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        layout_module, "write_musicbrainz_tags", lambda *args, **kwargs: None
+    )
 
     lines, exit_code = layout_module.identify_tracks_from_layout(
         tmp_path,

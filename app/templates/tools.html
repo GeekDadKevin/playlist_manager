@@ -3,6 +3,13 @@
 
 {% block content %}
 <section class="card">
+  <section class="tool-run-banner" id="tool-run-banner" hidden>
+    <div>
+      <span id="tool-run-banner-title"></span>
+      <span id="tool-run-banner-copy"></span>
+    </div>
+    <button id="tool-run-banner-button" class="btn-tool-run">View</button>
+  </section>
   <h2>Library Tools</h2>
   <p>
     Run maintenance jobs against the music library at
@@ -123,10 +130,15 @@
   aria-labelledby="tool-run-modal-title"
   hidden
 >
-  <div class="tool-run-modal-header">
+  <div class="tool-run-modal-header" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
     <div>
       <div class="tool-summary-title">Tool Session</div>
-      <h3 id="tool-run-modal-title" class="tool-run-modal-title">Library tool</h3>
+      <div style="display:flex;align-items:center;gap:.5rem;">
+        <h3 id="tool-run-modal-title" class="tool-run-modal-title" style="margin:0;">Library tool</h3>
+        <button type="button" class="btn-tool-run" id="tool-run-modal-copyall" title="Copy all log lines" style="padding:.2rem .4rem;display:flex;align-items:center;gap:.2rem;">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;"><rect x="6" y="2" width="9" height="14" rx="2" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="5" width="9" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+      </div>
     </div>
     <span class="tool-status" id="tool-run-modal-status">idle</span>
   </div>
@@ -136,7 +148,8 @@
   <div class="tool-summary" id="tool-run-modal-meta" hidden>
     <div class="tool-summary-grid" id="tool-run-modal-meta-grid"></div>
   </div>
-  <div class="tool-log-shell tool-run-modal-log-shell">
+  <div class="tool-log-shell tool-run-modal-log-shell" style="position:relative;">
+    <button type="button" class="btn-tool-run" id="tool-run-modal-copyall" style="position:absolute;top:8px;right:8px;z-index:2;">Copy All</button>
     <pre class="tool-log-output" id="tool-run-modal-log">Waiting for tool output.</pre>
   </div>
   <div class="tool-run-modal-actions">
@@ -773,7 +786,21 @@
 
 {% block scripts %}
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
+  // Copy All for modal log
+  var copyBtn = document.getElementById('tool-run-modal-copyall');
+  if (copyBtn) {
+    copyBtn.onclick = function() {
+      var log = document.getElementById('tool-run-modal-log');
+      if (!log) return;
+      var text = log.innerText || log.textContent || '';
+      navigator.clipboard.writeText(text).then(function() {
+        copyBtn.classList.add('copied');
+        setTimeout(function() { copyBtn.classList.remove('copied'); }, 1200);
+      });
+    };
+  }
+  (function () {
   const viewer = window.PlaylistSyncLiveRunViewer;
   const streamBase = {{ url_for('web.tools_stream', tool='PLACEHOLDER') | tojson }}.replace('PLACEHOLDER', '');
   const statusUrl = {{ url_for('web.tools_status') | tojson }};
@@ -1193,45 +1220,64 @@
     }
   }
 
-  bannerButton.addEventListener('click', () => {
-    openModal();
-    refreshToolStatus({ revealModal: true, tool: state.currentTool });
-  });
 
-  modalClose.addEventListener('click', () => {
-    closeModal();
-    if (!state.blocking) {
-      stopPolling();
-    }
-  });
+  if (bannerButton) {
+    bannerButton.addEventListener('click', () => {
+      openModal();
+      refreshToolStatus({ revealModal: true, tool: state.currentTool });
+    });
+  }
 
-  modalStop.addEventListener('click', () => {
-    forceStop(state.currentTool);
-  });
+  if (modalClose) {
+    modalClose.addEventListener('click', () => {
+      closeModal();
+      if (!state.blocking) {
+        stopPolling();
+      }
+    });
+  }
 
-  modalBackdrop.addEventListener('click', () => {
-    closeModal();
-  });
+  if (modalStop) {
+    modalStop.addEventListener('click', () => {
+      forceStop(state.currentTool);
+    });
+  }
 
-  identifyReviewOpen?.addEventListener('click', () => {
-    openIdentifyReview();
-  });
+  if (modalBackdrop) {
+    modalBackdrop.addEventListener('click', () => {
+      closeModal();
+    });
+  }
 
-  identifyReviewClose?.addEventListener('click', () => {
-    closeIdentifyReview();
-  });
+  if (identifyReviewOpen) {
+    identifyReviewOpen.addEventListener('click', () => {
+      openIdentifyReview();
+    });
+  }
 
-  identifyReviewBackdrop?.addEventListener('click', () => {
-    closeIdentifyReview();
-  });
+  if (identifyReviewClose) {
+    identifyReviewClose.addEventListener('click', () => {
+      closeIdentifyReview();
+    });
+  }
 
-  identifyRetryClose?.addEventListener('click', () => {
-    closeIdentifyRetry();
-  });
+  if (identifyReviewBackdrop) {
+    identifyReviewBackdrop.addEventListener('click', () => {
+      closeIdentifyReview();
+    });
+  }
 
-  identifyRetryBackdrop?.addEventListener('click', () => {
-    closeIdentifyRetry();
-  });
+  if (identifyRetryClose) {
+    identifyRetryClose.addEventListener('click', () => {
+      closeIdentifyRetry();
+    });
+  }
+
+  if (identifyRetryBackdrop) {
+    identifyRetryBackdrop.addEventListener('click', () => {
+      closeIdentifyRetry();
+    });
+  }
 
   document.querySelectorAll('form[action$="/tools/identify-audio/review/retry"]').forEach((form) => {
     form.addEventListener('submit', () => {
@@ -1384,5 +1430,6 @@
     });
   });
 })();
+});
 </script>
 {% endblock %}

@@ -11,7 +11,10 @@ NON_ALNUM_PATTERN = re.compile(r"[^a-z0-9]+")
 
 def normalize_text(value: str) -> str:
     ascii_value = (
-        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
+        unicodedata.normalize("NFKD", value)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
     )
     ascii_value = FEATURE_PATTERN.sub("feat", ascii_value.replace("&", " and "))
     return " ".join(NON_ALNUM_PATTERN.sub(" ", ascii_value).split())

@@ -62,7 +62,9 @@ class Config:
     YOUTUBE_REQUEST_RETRIES = int(os.getenv("YOUTUBE_REQUEST_RETRIES", "3"))
     YOUTUBE_FORCE_IPV4 = os.getenv("YOUTUBE_FORCE_IPV4", "1")
     SETTINGS_FILE = os.getenv("SETTINGS_FILE", str(Path(DATA_DIR) / "settings.json"))
-    PLAYLIST_DB_PATH = os.getenv("PLAYLIST_DB_PATH", str(Path(DATA_DIR) / "playlist_history.db"))
+    PLAYLIST_DB_PATH = os.getenv(
+        "PLAYLIST_DB_PATH", str(Path(DATA_DIR) / "playlist_history.db")
+    )
     LIBRARY_INDEX_DB_PATH = os.getenv(
         "LIBRARY_INDEX_DB_PATH",
         str(Path(DATA_DIR) / "library_index.db"),

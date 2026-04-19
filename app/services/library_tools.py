@@ -5,6 +5,7 @@ Server-Sent Events.  Each tool is an ordinary CLI script in ``scripts/``; we
 run it with the same interpreter that is running Flask so all installed
 packages are available without any extra PATH gymnastics.
 """
+
 from __future__ import annotations
 
 import os
@@ -99,7 +100,10 @@ def is_running(tool: str) -> bool:
 
 def get_tool_status_snapshot(*, line_limit: int = 200) -> dict[str, Any]:
     with _STATE_LOCK:
-        tools = [_trimmed_state(state, line_limit=line_limit) for state in _RUN_STATES.values()]
+        tools = [
+            _trimmed_state(state, line_limit=line_limit)
+            for state in _RUN_STATES.values()
+        ]
 
     running = [state for state in tools if state["status"] in {"running", "stopping"}]
     running.sort(key=lambda state: state.get("started_at", ""), reverse=True)
@@ -336,9 +340,7 @@ def _append_tool_line(tool: str, line: str) -> None:
             lines.append(line)
         if len(lines) > _STATE_LINE_LIMIT:
             state["dropped_line_count"] = (
-                int(state.get("dropped_line_count", 0))
-                + len(lines)
-                - _STATE_LINE_LIMIT
+                int(state.get("dropped_line_count", 0)) + len(lines) - _STATE_LINE_LIMIT
             )
             lines = lines[-_STATE_LINE_LIMIT:]
         state["lines"] = lines
@@ -350,7 +352,9 @@ def _complete_tool_state(tool: str, exit_code: int) -> None:
         if state is None:
             return
         stop_requested = bool(state.get("stop_requested"))
-        state["status"] = "stopped" if stop_requested else ("done" if exit_code == 0 else "error")
+        state["status"] = (
+            "stopped" if stop_requested else ("done" if exit_code == 0 else "error")
+        )
         state["exit_code"] = exit_code
         state["completed_at"] = _utc_now()
         state["process"] = None

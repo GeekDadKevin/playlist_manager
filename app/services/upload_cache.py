@@ -14,7 +14,9 @@ def cache_upload(upload: PlaylistUpload) -> PlaylistUpload:
     saved_path = upload.saved_path.strip() or f"memory://{uuid4().hex}"
     upload.saved_path = saved_path
     if not upload.stored_name:
-        upload.stored_name = saved_path.removeprefix("memory://") or f"upload-{uuid4().hex[:8]}"
+        upload.stored_name = (
+            saved_path.removeprefix("memory://") or f"upload-{uuid4().hex[:8]}"
+        )
 
     with _CACHE_LOCK:
         _CACHE[saved_path] = deepcopy(upload)

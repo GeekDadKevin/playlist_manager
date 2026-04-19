@@ -22,7 +22,9 @@ def test_get_json_retries_transient_503(monkeypatch) -> None:
     assert payload["title"] == "done"
 
 
-def test_lookup_recording_details_returns_richer_musicbrainz_fields(monkeypatch) -> None:
+def test_lookup_recording_details_returns_richer_musicbrainz_fields(
+    monkeypatch,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/ws/2/recording/recording-123":
             return httpx.Response(
@@ -161,7 +163,9 @@ def test_lookup_recording_details_falls_back_when_release_query_is_wrong() -> No
                                         },
                                     }
                                 ],
-                                "releases": [{"id": "release-456", "title": "Mezzanine"}],
+                                "releases": [
+                                    {"id": "release-456", "title": "Mezzanine"}
+                                ],
                             }
                         ]
                     },

@@ -27,7 +27,9 @@ _DAY_TO_CRON = {
 }
 
 
-def default_settings(default_overrides: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def default_settings(
+    default_overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     settings = {
         "theme": "dark",
         "automation_enabled": False,
@@ -92,7 +94,9 @@ def normalize_settings(
     theme = str(raw.get("theme", settings["theme"])).strip().lower()
     settings["theme"] = theme if theme in ALLOWED_THEMES else settings["theme"]
 
-    schedule_day = str(raw.get("schedule_day", settings["schedule_day"])).strip().lower()
+    schedule_day = (
+        str(raw.get("schedule_day", settings["schedule_day"])).strip().lower()
+    )
     settings["schedule_day"] = (
         schedule_day if schedule_day in DAY_NAMES else settings["schedule_day"]
     )
@@ -118,7 +122,9 @@ def normalize_settings(
     settings["playlist_targets"] = _normalize_targets(raw.get("playlist_targets"))
 
     settings["last_run_at"] = str(raw.get("last_run_at", "")).strip()
-    settings["last_run_status"] = str(raw.get("last_run_status", "never")).strip() or "never"
+    settings["last_run_status"] = (
+        str(raw.get("last_run_status", "never")).strip() or "never"
+    )
     settings["last_run_message"] = (
         str(raw.get("last_run_message", "Not run yet.")).strip() or "Not run yet."
     )
@@ -136,7 +142,9 @@ def cron_expression(settings: dict[str, Any]) -> str:
     return f"{minute} {hour} * * {cron_day}"
 
 
-def matches_playlist_target(title: str, playlist_targets: list[str] | tuple[str, ...]) -> bool:
+def matches_playlist_target(
+    title: str, playlist_targets: list[str] | tuple[str, ...]
+) -> bool:
     normalized_title = str(title).strip().lower()
     return any(term and term in normalized_title for term in playlist_targets)
 
@@ -158,7 +166,9 @@ def should_run_now(settings: dict[str, Any], now: datetime | None = None) -> boo
     if DAY_NAMES.index(schedule_day) != current_time.weekday():
         return False
 
-    target_hour, target_minute = _parse_time(str(settings.get("schedule_time", "06:00")))
+    target_hour, target_minute = _parse_time(
+        str(settings.get("schedule_time", "06:00"))
+    )
     scheduled_minutes = (target_hour * 60) + target_minute
     current_minutes = (current_time.hour * 60) + current_time.minute
     if current_minutes < scheduled_minutes:
@@ -230,7 +240,9 @@ def _normalize_threads(value: Any) -> int:
 
 def settings_defaults_from_config(config: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "soundcloud_fallback": _bool_value(config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")),
+        "soundcloud_fallback": _bool_value(
+            config.get("SOUNDCLOUD_FALLBACK_ENABLED", "1")
+        ),
         "youtube_fallback": _bool_value(config.get("YOUTUBE_FALLBACK_ENABLED", "0")),
         "download_threads": _normalize_threads(config.get("DOWNLOAD_THREADS", 1)),
     }

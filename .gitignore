@@ -16,6 +16,7 @@ __pycache__/
 app.db
 data/
 instance/
+app.lock
 
 # Editors / OS
 .vscode/
@@ -24,3 +25,4 @@ Thumbs.db
 
 # Local Only files
 examples/
+

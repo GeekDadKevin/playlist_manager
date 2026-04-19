@@ -8,7 +8,11 @@ from app.models import PlaylistTrack
 
 
 def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
-    payload = json.loads(content.lstrip("\ufeff").strip()) if isinstance(content, str) else content
+    payload = (
+        json.loads(content.lstrip("\ufeff").strip())
+        if isinstance(content, str)
+        else content
+    )
     playlist_data, items = _extract_playlist_items(payload)
 
     tracks: list[PlaylistTrack] = []
@@ -27,7 +31,9 @@ def parse_jspf(content: str | dict | list) -> list[PlaylistTrack]:
         extension_metadata = _track_extension_metadata(item)
         track_metadata = _track_metadata(item)
         additional_info = _additional_info(track_metadata)
-        identifier = _text_value(item.get("identifier") or extension_metadata.get("identifier"))
+        identifier = _text_value(
+            item.get("identifier") or extension_metadata.get("identifier")
+        )
         title = (
             _text_value(item.get("title"))
             or _text_value(item.get("name"))

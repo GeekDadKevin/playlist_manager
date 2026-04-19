@@ -6,7 +6,11 @@ from flask.typing import ResponseReturnValue
 from app.matching import build_search_queries, rank_candidates
 from app.models import PlaylistTrack
 from app.services.deezer_download import DeezerDownloadService
-from app.services.ingest import load_saved_playlist, parse_uploaded_playlist, save_uploaded_playlist
+from app.services.ingest import (
+    load_saved_playlist,
+    parse_uploaded_playlist,
+    save_uploaded_playlist,
+)
 from app.services.navidrome_playlists import export_navidrome_playlist
 
 api_bp = Blueprint("api", __name__)
@@ -50,7 +54,9 @@ def parse_playlist() -> ResponseReturnValue:
         filename = payload.get("filename", "playlist.jspf")
         content = payload.get("content", "")
         if not content:
-            return {"error": "Provide an uploaded file or JSON with filename/content."}, 400
+            return {
+                "error": "Provide an uploaded file or JSON with filename/content."
+            }, 400
         tracks = parse_uploaded_playlist(filename, content.encode("utf-8"))
 
     response["count"] = len(tracks)
@@ -90,11 +96,15 @@ def sync_playlist() -> ResponseReturnValue:
             for item in payload.get("tracks", [])
         ]
     else:
-        return {"error": "Provide a saved path, uploaded file, or a list of tracks to sync."}, 400
+        return {
+            "error": "Provide a saved path, uploaded file, or a list of tracks to sync."
+        }, 400
 
     downloader = DeezerDownloadService.from_config(current_app.config)
     try:
-        sync_result = downloader.sync_tracks(tracks, max_tracks=payload.get("max_tracks"))
+        sync_result = downloader.sync_tracks(
+            tracks, max_tracks=payload.get("max_tracks")
+        )
     except Exception as exc:
         return {"error": str(exc)}, 400
 
@@ -163,7 +173,11 @@ def match_preview() -> ResponseReturnValue:
         try:
             ranked = downloader.search_track(track)
         except Exception as exc:
-            return {"error": str(exc), "queries": build_search_queries(track), "ranked": []}, 400
+            return {
+                "error": str(exc),
+                "queries": build_search_queries(track),
+                "ranked": [],
+            }, 400
 
     return {
         "queries": build_search_queries(track),

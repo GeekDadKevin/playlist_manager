@@ -33,11 +33,15 @@ class MusicBrainzService:
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> MusicBrainzService:
         return cls(
-            base_url=str(config.get("MUSICBRAINZ_API_BASE_URL", "https://musicbrainz.org")),
+            base_url=str(
+                config.get("MUSICBRAINZ_API_BASE_URL", "https://musicbrainz.org")
+            ),
             user_agent=str(
                 config.get("MUSICBRAINZ_USER_AGENT", "playlist_manager/1.0 (local)")
             ),
-            rate_limit_seconds=float(config.get("MUSICBRAINZ_RATE_LIMIT_SECONDS", 1.0) or 1.0),
+            rate_limit_seconds=float(
+                config.get("MUSICBRAINZ_RATE_LIMIT_SECONDS", 1.0) or 1.0
+            ),
         )
 
     def lookup_track_number(
@@ -75,7 +79,9 @@ class MusicBrainzService:
                 artist_name=artist_name,
             )
             if release_id:
-                track_number = self._track_number_from_release(release_id, recording_mbid)
+                track_number = self._track_number_from_release(
+                    release_id, recording_mbid
+                )
 
         with self._lock:
             self._cache[cache_key] = track_number
@@ -109,7 +115,9 @@ class MusicBrainzService:
                 "/ws/2/recording",
                 {"query": query, "limit": "10"},
             )
-            recordings = payload.get("recordings", []) if isinstance(payload, dict) else []
+            recordings = (
+                payload.get("recordings", []) if isinstance(payload, dict) else []
+            )
             recording_mbid = self._select_recording_mbid(
                 recordings,
                 title=title,
@@ -160,7 +168,9 @@ class MusicBrainzService:
                         "limit": "10",
                     },
                 )
-                recordings = payload.get("recordings", []) if isinstance(payload, dict) else []
+                recordings = (
+                    payload.get("recordings", []) if isinstance(payload, dict) else []
+                )
                 selected_recording = self._select_recording(
                     recordings,
                     title=title,
@@ -193,16 +203,21 @@ class MusicBrainzService:
 
         release_title = str(release_payload.get("title") or "").strip() or album_name
         artist_credit = recording_payload.get("artist-credit", [])
-        artist_value = " ".join(_artist_credit_names(artist_credit)).strip() or artist_name
+        artist_value = (
+            " ".join(_artist_credit_names(artist_credit)).strip() or artist_name
+        )
         artist_mbid = _first_artist_credit_id(artist_credit)
-        artist_sort = " ".join(_artist_credit_sort_names(artist_credit)).strip() or artist_value
+        artist_sort = (
+            " ".join(_artist_credit_sort_names(artist_credit)).strip() or artist_value
+        )
         album_artist_credit = release_payload.get("artist-credit", []) or artist_credit
         album_artist_value = (
             " ".join(_artist_credit_names(album_artist_credit)).strip() or artist_value
         )
         album_artist_mbid = _first_artist_credit_id(album_artist_credit) or artist_mbid
         album_artist_sort = (
-            " ".join(_artist_credit_sort_names(album_artist_credit)).strip() or album_artist_value
+            " ".join(_artist_credit_sort_names(album_artist_credit)).strip()
+            or album_artist_value
         )
         track_context = (
             _release_track_context(release_payload, recording_mbid)
@@ -254,10 +269,14 @@ class MusicBrainzService:
             "recording_disambiguation": str(
                 recording_payload.get("disambiguation") or ""
             ).strip(),
-            "album_disambiguation": str(release_payload.get("disambiguation") or "").strip(),
+            "album_disambiguation": str(
+                release_payload.get("disambiguation") or ""
+            ).strip(),
         }
 
-    def _track_number_from_release(self, release_mbid: str, recording_mbid: str) -> int | None:
+    def _track_number_from_release(
+        self, release_mbid: str, recording_mbid: str
+    ) -> int | None:
         payload = self._get_json(
             f"/ws/2/release/{release_mbid}",
             {"inc": "recordings+media"},
@@ -266,7 +285,9 @@ class MusicBrainzService:
         for medium in media:
             tracks = medium.get("tracks", []) if isinstance(medium, dict) else []
             for track in tracks:
-                recording = track.get("recording", {}) if isinstance(track, dict) else {}
+                recording = (
+                    track.get("recording", {}) if isinstance(track, dict) else {}
+                )
                 if recording_mbid and recording.get("id") != recording_mbid:
                     continue
                 number = track.get("number") or track.get("position")
@@ -344,8 +365,13 @@ class MusicBrainzService:
                     return response.json()
             except httpx.HTTPStatusError as exc:
                 last_error = exc
-                status_code = exc.response.status_code if exc.response is not None else 0
-                if status_code not in _TRANSIENT_STATUS_CODES or attempt >= _REQUEST_ATTEMPTS:
+                status_code = (
+                    exc.response.status_code if exc.response is not None else 0
+                )
+                if (
+                    status_code not in _TRANSIENT_STATUS_CODES
+                    or attempt >= _REQUEST_ATTEMPTS
+                ):
                     raise
             except httpx.RequestError as exc:
                 last_error = exc
@@ -401,12 +427,16 @@ class MusicBrainzService:
             title_value = _normalize(str(item.get("title") or ""))
             if wanted_title and title_value == wanted_title:
                 score += 40
-            elif wanted_title and (wanted_title in title_value or title_value in wanted_title):
+            elif wanted_title and (
+                wanted_title in title_value or title_value in wanted_title
+            ):
                 score += 20
             elif wanted_title:
                 score -= 30
 
-            credit_names = _normalize(" ".join(_artist_credit_names(item.get("artist-credit", []))))
+            credit_names = _normalize(
+                " ".join(_artist_credit_names(item.get("artist-credit", [])))
+            )
             if wanted_artist and credit_names == wanted_artist:
                 score += 30
             elif wanted_artist and wanted_artist in credit_names:
@@ -414,7 +444,11 @@ class MusicBrainzService:
             elif wanted_artist:
                 score -= 15
 
-            releases = item.get("releases", []) if isinstance(item.get("releases"), list) else []
+            releases = (
+                item.get("releases", [])
+                if isinstance(item.get("releases"), list)
+                else []
+            )
             release_titles = [
                 _normalize(str(release.get("title") or ""))
                 for release in releases
@@ -513,8 +547,12 @@ def _artist_credit_sort_names(credit: list[Any]) -> list[str]:
     names: list[str] = []
     for item in credit:
         if isinstance(item, dict):
-            artist = item.get("artist", {}) if isinstance(item.get("artist"), dict) else {}
-            name = str(artist.get("sort-name") or item.get("name") or artist.get("name") or "")
+            artist = (
+                item.get("artist", {}) if isinstance(item.get("artist"), dict) else {}
+            )
+            name = str(
+                artist.get("sort-name") or item.get("name") or artist.get("name") or ""
+            )
             if name:
                 names.append(name)
         elif isinstance(item, str):
@@ -522,13 +560,19 @@ def _artist_credit_sort_names(credit: list[Any]) -> list[str]:
     return names
 
 
-def _release_track_context(release_payload: dict[str, Any], recording_mbid: str) -> dict[str, Any]:
-    media = release_payload.get("media", []) if isinstance(release_payload, dict) else []
+def _release_track_context(
+    release_payload: dict[str, Any], recording_mbid: str
+) -> dict[str, Any]:
+    media = (
+        release_payload.get("media", []) if isinstance(release_payload, dict) else []
+    )
     disc_total = len([medium for medium in media if isinstance(medium, dict)]) or None
     for medium_index, medium in enumerate(media, start=1):
         if not isinstance(medium, dict):
             continue
-        tracks = medium.get("tracks", []) if isinstance(medium.get("tracks"), list) else []
+        tracks = (
+            medium.get("tracks", []) if isinstance(medium.get("tracks"), list) else []
+        )
         track_total = _coerce_track_number(medium.get("track-count")) or len(
             [track for track in tracks if isinstance(track, dict)]
         )
@@ -537,12 +581,18 @@ def _release_track_context(release_payload: dict[str, Any], recording_mbid: str)
                 continue
             recording_value = track.get("recording")
             recording = recording_value if isinstance(recording_value, dict) else {}
-            if recording_mbid and str(recording.get("id") or "").strip() != recording_mbid:
+            if (
+                recording_mbid
+                and str(recording.get("id") or "").strip() != recording_mbid
+            ):
                 continue
             return {
-                "track_number": _coerce_track_number(track.get("number") or track.get("position")),
+                "track_number": _coerce_track_number(
+                    track.get("number") or track.get("position")
+                ),
                 "track_total": track_total or None,
-                "disc_number": _coerce_track_number(medium.get("position")) or medium_index,
+                "disc_number": _coerce_track_number(medium.get("position"))
+                or medium_index,
                 "disc_total": disc_total,
                 "media_format": str(medium.get("format") or "").strip(),
             }

@@ -19,8 +19,14 @@ def rank_candidates(
     for candidate in candidates:
         artist_score = _fuzzy_score(track.artist, candidate.get("artist", ""))
         title_score = _fuzzy_score(track.title, candidate.get("title", ""))
-        album_score = _fuzzy_score(track.album, candidate.get("album", "")) if track.album else 0.0
-        duration_score = _duration_score(track.duration_seconds, candidate.get("duration_seconds"))
+        album_score = (
+            _fuzzy_score(track.album, candidate.get("album", ""))
+            if track.album
+            else 0.0
+        )
+        duration_score = _duration_score(
+            track.duration_seconds, candidate.get("duration_seconds")
+        )
 
         total = round(
             (title_score * 0.5)
@@ -50,7 +56,9 @@ class DeezerSearchService:
             return []
 
         with httpx.Client(timeout=10.0) as client:
-            response = client.get(self.base_url, params={"q": queries[0], "limit": limit})
+            response = client.get(
+                self.base_url, params={"q": queries[0], "limit": limit}
+            )
             response.raise_for_status()
 
         payload = response.json()

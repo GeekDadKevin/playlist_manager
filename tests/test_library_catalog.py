@@ -40,7 +40,9 @@ def test_list_catalog_tracks_filters_missing_info(tmp_path) -> None:
     assert listing["total"] == 1
     assert listing["per_page"] == CATALOG_PAGE_SIZE
     assert listing["items"][0]["relative_path"] == "Burial/Untrue/Archangel.flac"
-    assert any(badge["label"] == "Missing Info" for badge in listing["items"][0]["anomalies"])
+    assert any(
+        badge["label"] == "Missing Info" for badge in listing["items"][0]["anomalies"]
+    )
 
 
 def test_list_catalog_tracks_filters_musicbrainz_pending(tmp_path) -> None:
@@ -67,7 +69,9 @@ def test_list_catalog_tracks_filters_musicbrainz_pending(tmp_path) -> None:
     assert listing["items"][0]["musicbrainz_label"] == "MB Unverified"
 
 
-def test_run_catalog_batch_action_dispatches_selected_paths(tmp_path, monkeypatch) -> None:
+def test_run_catalog_batch_action_dispatches_selected_paths(
+    tmp_path, monkeypatch
+) -> None:
     data_dir = tmp_path / "data"
     audio_path = tmp_path / "Burial" / "Untrue" / "Archangel.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +116,9 @@ def test_run_catalog_batch_action_dispatches_selected_paths(tmp_path, monkeypatc
     assert captured["refreshed_paths"] == [audio_path]
 
 
-def test_run_catalog_batch_action_dispatches_audio_identification(tmp_path, monkeypatch) -> None:
+def test_run_catalog_batch_action_dispatches_audio_identification(
+    tmp_path, monkeypatch
+) -> None:
     data_dir = tmp_path / "data"
     audio_path = tmp_path / "Burial" / "Untrue" / "Archangel.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +127,9 @@ def test_run_catalog_batch_action_dispatches_audio_identification(tmp_path, monk
 
     class FakeModule:
         @staticmethod
-        def identify_tracks_by_audio(root, *, dry_run=False, db_path=None, selected_paths=None):
+        def identify_tracks_by_audio(
+            root, *, dry_run=False, db_path=None, selected_paths=None
+        ):
             captured["root"] = root
             captured["dry_run"] = dry_run
             captured["db_path"] = db_path
@@ -169,7 +177,9 @@ def test_run_catalog_batch_action_dispatches_structure_identification(
 
     class FakeModule:
         @staticmethod
-        def identify_tracks_from_layout(root, *, dry_run=False, db_path=None, selected_paths=None):
+        def identify_tracks_from_layout(
+            root, *, dry_run=False, db_path=None, selected_paths=None
+        ):
             captured["root"] = root
             captured["dry_run"] = dry_run
             captured["db_path"] = db_path
@@ -227,4 +237,6 @@ def test_run_catalog_batch_action_rejects_more_than_page_size(tmp_path) -> None:
     except ValueError as exc:
         assert str(CATALOG_PAGE_SIZE) in str(exc)
     else:
-        raise AssertionError("Expected oversized catalog batch selection to be rejected")
+        raise AssertionError(
+            "Expected oversized catalog batch selection to be rejected"
+        )

@@ -45,8 +45,12 @@ def test_identify_track_returns_musicbrainz_details(tmp_path) -> None:
                             {
                                 "id": "recording-123",
                                 "title": "Teardrop",
-                                "artists": [{"id": "artist-1", "name": "Massive Attack"}],
-                                "releases": [{"id": "release-456", "title": "Mezzanine"}],
+                                "artists": [
+                                    {"id": "artist-1", "name": "Massive Attack"}
+                                ],
+                                "releases": [
+                                    {"id": "release-456", "title": "Mezzanine"}
+                                ],
                             }
                         ],
                     }
@@ -66,7 +70,9 @@ def test_identify_track_returns_musicbrainz_details(tmp_path) -> None:
         ),
     )
 
-    result = service.identify_track(audio_path, musicbrainz_service=StubMusicBrainzService())
+    result = service.identify_track(
+        audio_path, musicbrainz_service=StubMusicBrainzService()
+    )
 
     assert result["accepted"] is True
     assert result["match"]["recording_mbid"] == "recording-123"
@@ -92,8 +98,12 @@ def test_identify_track_marks_low_score_as_unaccepted(tmp_path) -> None:
                             {
                                 "id": "recording-999",
                                 "title": "Unknown Song",
-                                "artists": [{"id": "artist-9", "name": "Unknown Artist"}],
-                                "releases": [{"id": "release-9", "title": "Unknown Album"}],
+                                "artists": [
+                                    {"id": "artist-9", "name": "Unknown Artist"}
+                                ],
+                                "releases": [
+                                    {"id": "release-9", "title": "Unknown Album"}
+                                ],
                             }
                         ],
                     }

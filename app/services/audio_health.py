@@ -25,7 +25,9 @@ def find_ffmpeg_executable() -> str | None:
 def iter_audio_files(root: str | Path) -> list[Path]:
     root_path = Path(root).expanduser()
     if not root_path.exists() or not root_path.is_dir():
-        raise ValueError(f"Music library root does not exist or is not a directory: {root_path}")
+        raise ValueError(
+            f"Music library root does not exist or is not a directory: {root_path}"
+        )
 
     return sorted(
         path
@@ -41,7 +43,9 @@ def check_audio_file(
 ) -> AudioCheckResult:
     path = Path(audio_path)
     if not path.exists() or not path.is_file():
-        return AudioCheckResult(path=path, status="error", message="File does not exist.")
+        return AudioCheckResult(
+            path=path, status="error", message="File does not exist."
+        )
 
     if path.stat().st_size <= 0:
         return AudioCheckResult(path=path, status="error", message="Zero-byte file.")

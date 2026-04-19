@@ -49,10 +49,14 @@ def test_repo_env_file_passes_validation() -> None:
 
 def test_apply_config_json_skips_defaults_for_local_runs(tmp_path, monkeypatch) -> None:
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"DATA_DIR": "/app/data", "APP_PORT": 3000}', encoding="utf-8")
+    config_path.write_text(
+        '{"DATA_DIR": "/app/data", "APP_PORT": 3000}', encoding="utf-8"
+    )
     monkeypatch.delenv("PLAYLIST_MANAGER_USE_CONFIG_JSON", raising=False)
 
-    merged = _apply_config_json({}, config_path=config_path, dockerenv_path=tmp_path / ".dockerenv")
+    merged = _apply_config_json(
+        {}, config_path=config_path, dockerenv_path=tmp_path / ".dockerenv"
+    )
 
     assert "DATA_DIR" not in merged
     assert "APP_PORT" not in merged
@@ -60,7 +64,9 @@ def test_apply_config_json_skips_defaults_for_local_runs(tmp_path, monkeypatch) 
 
 def test_apply_config_json_respects_explicit_opt_in(tmp_path, monkeypatch) -> None:
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"DATA_DIR": "/app/data", "APP_PORT": 3000}', encoding="utf-8")
+    config_path.write_text(
+        '{"DATA_DIR": "/app/data", "APP_PORT": 3000}', encoding="utf-8"
+    )
     monkeypatch.setenv("PLAYLIST_MANAGER_USE_CONFIG_JSON", "1")
 
     merged = _apply_config_json(
