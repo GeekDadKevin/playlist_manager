@@ -14,6 +14,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/repair_song_xml_ids_<timestamp>.log
 (or cwd if the root is not writable).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,7 +73,9 @@ def repair_xml_ids(
 
     if selected_audio_paths is not None:
         chosen_paths = (
-            selected_audio_paths[:limit] if limit is not None else list(selected_audio_paths)
+            selected_audio_paths[:limit]
+            if limit is not None
+            else list(selected_audio_paths)
         )
         candidates = [
             (audio_path.with_suffix(".xml"), audio_path)
@@ -91,7 +94,10 @@ def repair_xml_ids(
             force_full=full_scan,
             limit=limit,
         )
-        _emit(f"  Found {len(candidates)} XML sidecar(s) to inspect for ID repair (from DB).", lines)
+        _emit(
+            f"  Found {len(candidates)} XML sidecar(s) to inspect for ID repair (from DB).",
+            lines,
+        )
 
     summary = repair_song_metadata_xml_ids(
         root,
@@ -101,9 +107,7 @@ def repair_xml_ids(
         progress_callback=lambda line: _emit(line, lines),
     )
     # Collect updated audio paths for re-indexing
-    updated_audio_paths = [
-        Path(item).with_suffix("") for item in summary["written"]
-    ]
+    updated_audio_paths = [Path(item).with_suffix("") for item in summary["written"]]
 
     for item in summary["written"][:50]:
         action = "[DRY-RUN] would update" if dry_run else "UPDATED"

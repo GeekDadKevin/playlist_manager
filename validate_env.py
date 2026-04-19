@@ -7,7 +7,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
 
-from env_config import coerce_json_config_values, read_json_config, should_apply_json_config
+from env_config import (
+    coerce_json_config_values,
+    read_json_config,
+    should_apply_json_config,
+)
 
 _ALLOWED_FLASK_ENVS = {"development", "production", "testing"}
 _ALLOWED_DEEZER_QUALITIES = {"FLAC", "MP3_320", "MP3_128"}
@@ -24,8 +28,14 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
         errors.append("FLASK_ENV must be one of: development, production, testing.")
 
     secret_key = _get_value(values, "SECRET_KEY", "dev-only-change-me")
-    if flask_env == "production" and secret_key in {"change-me", "dev-only-change-me", ""}:
-        errors.append("SECRET_KEY must be set to a non-default value when FLASK_ENV=production.")
+    if flask_env == "production" and secret_key in {
+        "change-me",
+        "dev-only-change-me",
+        "",
+    }:
+        errors.append(
+            "SECRET_KEY must be set to a non-default value when FLASK_ENV=production."
+        )
 
     _validate_int(values, "APP_PORT", errors, default="3000", minimum=1, maximum=65535)
     _validate_int(values, "SYNC_MAX_TRACKS", errors, default="100", minimum=1)
@@ -65,7 +75,10 @@ def validate_environment(env: Mapping[str, object] | None = None) -> list[str]:
     required_paths = (
         ("DATA_DIR", _get_value(values, "DATA_DIR", "/app/data")),
         ("NAVIDROME_PLAYLIST_DIR", _get_playlist_dir_value(values)),
-        ("NAVIDROME_MUSIC_ROOT", _get_value(values, "NAVIDROME_MUSIC_ROOT", "/navidrome/root")),
+        (
+            "NAVIDROME_MUSIC_ROOT",
+            _get_value(values, "NAVIDROME_MUSIC_ROOT", "/navidrome/root"),
+        ),
     )
     for name, value in required_paths:
         if not value:
@@ -117,7 +130,9 @@ def _apply_config_json(
     if not should_apply_json_config(values, dockerenv_path=dockerenv_path):
         return values
 
-    resolved_config_path = config_path or (Path(__file__).resolve().parent / "config.json")
+    resolved_config_path = config_path or (
+        Path(__file__).resolve().parent / "config.json"
+    )
 
     try:
         raw = read_json_config(resolved_config_path)

@@ -6,7 +6,10 @@ from typing import Any
 from rapidfuzz import fuzz
 
 from app.matching.normalize import normalize_text
-from app.services.musicbrainz_tag_writer import musicbrainz_xml_fields, write_musicbrainz_tags
+from app.services.musicbrainz_tag_writer import (
+    musicbrainz_xml_fields,
+    write_musicbrainz_tags,
+)
 from app.services.song_metadata import (
     load_embedded_audio_metadata,
     load_song_metadata_xml,
@@ -64,17 +67,24 @@ def review_item_to_details(item: dict[str, Any]) -> dict[str, Any]:
     return details
 
 
-def apply_identification_metadata(audio_path: str | Path, details: dict[str, Any]) -> None:
+def apply_identification_metadata(
+    audio_path: str | Path, details: dict[str, Any]
+) -> None:
     path = Path(audio_path)
     write_musicbrainz_tags(path, details)
     preserved = _preserved_xml_fields(path)
-    source = preserved["source"] or f"https://musicbrainz.org/recording/{details['recording_mbid']}"
+    source = (
+        preserved["source"]
+        or f"https://musicbrainz.org/recording/{details['recording_mbid']}"
+    )
     write_song_metadata_xml(
         path,
         title=str(details.get("title") or path.stem).strip(),
         artist=str(details.get("artist") or "").strip(),
         album=str(details.get("album") or "").strip(),
-        album_artist=str(details.get("albumartist") or details.get("artist") or "").strip(),
+        album_artist=str(
+            details.get("albumartist") or details.get("artist") or ""
+        ).strip(),
         track_number=details.get("track_number"),
         provider=preserved["provider"],
         downloaded_from=preserved["downloaded_from"],
@@ -97,15 +107,21 @@ def fingerprint_guardrail_assessment(
 ) -> dict[str, Any]:
     path = Path(audio_path)
     reference = _reference_metadata(path)
-    title_score = _match_similarity(reference.get("title", ""), str(details.get("title") or ""))
+    title_score = _match_similarity(
+        reference.get("title", ""), str(details.get("title") or "")
+    )
     artist_score = _best_similarity(
-        _match_similarity(reference.get("artist", ""), str(details.get("artist") or "")),
+        _match_similarity(
+            reference.get("artist", ""), str(details.get("artist") or "")
+        ),
         _match_similarity(
             reference.get("albumartist", ""),
             str(details.get("albumartist") or details.get("artist") or ""),
         ),
     )
-    album_score = _match_similarity(reference.get("album", ""), str(details.get("album") or ""))
+    album_score = _match_similarity(
+        reference.get("album", ""), str(details.get("album") or "")
+    )
 
     weighted: list[tuple[float, float]] = []
     if title_score is not None:
@@ -161,7 +177,9 @@ def build_review_item(
         "match_title": str(details.get("title") or "").strip(),
         "match_artist": str(details.get("artist") or "").strip(),
         "match_album": str(details.get("album") or "").strip(),
-        "match_albumartist": str(details.get("albumartist") or details.get("artist") or "").strip(),
+        "match_albumartist": str(
+            details.get("albumartist") or details.get("artist") or ""
+        ).strip(),
         "artist_mbid": str(details.get("artist_mbid") or "").strip(),
         "albumartist_mbid": str(details.get("albumartist_mbid") or "").strip(),
         "track_number": details.get("track_number"),
@@ -198,7 +216,9 @@ def _preserved_xml_fields(audio_path: Path) -> dict[str, str]:
         "source": source,
         "quality": str(xml_data.get("quality") or "").strip(),
         "annotation": str(xml_data.get("description") or "").strip(),
-        "deezer_id": str(xml_data.get("deezerid") or embedded.get("deezer_id") or "").strip(),
+        "deezer_id": str(
+            xml_data.get("deezerid") or embedded.get("deezer_id") or ""
+        ).strip(),
         "deezer_artist_id": str(
             xml_data.get("deezerartistid") or embedded.get("deezer_artist_id") or ""
         ).strip(),
@@ -227,7 +247,9 @@ def _reference_metadata(audio_path: Path) -> dict[str, str]:
     xml_data = load_song_metadata_xml(audio_path.with_suffix(".xml"))
     artist = str(embedded.get("artist") or "").strip()
     albumartist = str(embedded.get("albumartist") or "").strip()
-    xml_artist = str(xml_data.get("performingartist") or xml_data.get("artist") or "").strip()
+    xml_artist = str(
+        xml_data.get("performingartist") or xml_data.get("artist") or ""
+    ).strip()
     xml_albumartist = str(xml_data.get("albumartist") or "").strip()
     return {
         "title": str(embedded.get("title") or xml_data.get("title") or "").strip(),

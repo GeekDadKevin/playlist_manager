@@ -66,7 +66,9 @@ def lookup_musicbrainz_metadata_match(
     return {}
 
 
-def _metadata_search_variants(*, title: str, artist: str, album: str) -> list[dict[str, str]]:
+def _metadata_search_variants(
+    *, title: str, artist: str, album: str
+) -> list[dict[str, str]]:
     candidates = [
         {"title": title, "artist": artist, "album": album},
         {"title": title, "artist": artist, "album": ""},
@@ -133,7 +135,9 @@ class AcoustIdService:
     def from_config(cls, config: Mapping[str, object]) -> AcoustIdService:
         return cls(
             api_key=str(config.get("ACOUSTID_API_KEY", "")),
-            base_url=str(config.get("ACOUSTID_API_BASE_URL", "https://api.acoustid.org")),
+            base_url=str(
+                config.get("ACOUSTID_API_BASE_URL", "https://api.acoustid.org")
+            ),
             fpcalc_path=str(config.get("FPCALC_BIN", "")),
             request_timeout=float(config.get("ACOUSTID_LOOKUP_TIMEOUT", 20.0) or 20.0),
             score_threshold=float(config.get("ACOUSTID_SCORE_THRESHOLD", 0.9) or 0.9),
@@ -153,7 +157,9 @@ class AcoustIdService:
         max_candidates: int = 5,
     ) -> dict[str, Any]:
         if not self.is_configured():
-            raise ValueError("Configure ACOUSTID_API_KEY and ensure fpcalc is installed.")
+            raise ValueError(
+                "Configure ACOUSTID_API_KEY and ensure fpcalc is installed."
+            )
 
         fingerprint = self.fingerprint_audio(audio_path)
         candidates = self.lookup_candidates(
@@ -232,12 +238,16 @@ class AcoustIdService:
         except OSError as exc:
             raise ValueError(f"Could not start fpcalc: {exc}") from exc
         except subprocess.TimeoutExpired as exc:
-            raise ValueError(f"fpcalc timed out while fingerprinting {path.name}.") from exc
+            raise ValueError(
+                f"fpcalc timed out while fingerprinting {path.name}."
+            ) from exc
 
         stdout = str(result.stdout or "").strip()
         stderr = str(result.stderr or "").strip()
         if result.returncode != 0:
-            raise ValueError(stderr or stdout or f"fpcalc exited with code {result.returncode}.")
+            raise ValueError(
+                stderr or stdout or f"fpcalc exited with code {result.returncode}."
+            )
 
         try:
             payload = json.loads(stdout)
@@ -283,7 +293,9 @@ class AcoustIdService:
 
         payload = response.json()
         if str(payload.get("status") or "").strip().lower() != "ok":
-            message = str(payload.get("error", {}).get("message") or "AcoustID lookup failed.")
+            message = str(
+                payload.get("error", {}).get("message") or "AcoustID lookup failed."
+            )
             raise ValueError(message)
 
         candidates: list[dict[str, Any]] = []
@@ -320,7 +332,11 @@ def _candidate_from_recording(
     score: float,
 ) -> dict[str, Any]:
     artist_name, artist_mbid = _artist_credit(recording.get("artists"))
-    releases = recording.get("releases", []) if isinstance(recording.get("releases"), list) else []
+    releases = (
+        recording.get("releases", [])
+        if isinstance(recording.get("releases"), list)
+        else []
+    )
     release_title = ""
     release_mbid = ""
     track_number: int | None = None
@@ -329,15 +345,26 @@ def _candidate_from_recording(
             continue
         release_mbid = str(release.get("id") or "").strip()
         release_title = str(release.get("title") or "").strip()
-        mediums = release.get("mediums", []) if isinstance(release.get("mediums"), list) else []
+        mediums = (
+            release.get("mediums", [])
+            if isinstance(release.get("mediums"), list)
+            else []
+        )
         for medium in mediums:
             if not isinstance(medium, dict):
                 continue
-            tracks = medium.get("tracks", []) if isinstance(medium.get("tracks"), list) else []
+            tracks = (
+                medium.get("tracks", [])
+                if isinstance(medium.get("tracks"), list)
+                else []
+            )
             for track in tracks:
                 if not isinstance(track, dict):
                     continue
-                if str(track.get("id") or "").strip() == str(recording.get("id") or "").strip():
+                if (
+                    str(track.get("id") or "").strip()
+                    == str(recording.get("id") or "").strip()
+                ):
                     track_number = _coerce_track_number(
                         track.get("position") or track.get("number")
                     )

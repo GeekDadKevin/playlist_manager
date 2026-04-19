@@ -10,7 +10,9 @@ from app.services.library_index import refresh_library_index
 def _load_fix_tags_module():
     repo_root = Path(__file__).resolve().parents[1]
     module_path = repo_root / "scripts" / "fix_audio_tags.py"
-    spec = importlib.util.spec_from_file_location("fix_audio_tags_test_module", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "fix_audio_tags_test_module", module_path
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -21,7 +23,9 @@ def _load_fix_tags_module():
 def test_fix_tags_uses_catalog_candidates(tmp_path, monkeypatch) -> None:
     fix_module = _load_fix_tags_module()
 
-    audio_path = tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    audio_path = (
+        tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    )
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"fake-audio")
 
@@ -67,7 +71,9 @@ def test_fix_tags_uses_catalog_candidates(tmp_path, monkeypatch) -> None:
 
 def test_fix_tags_refresh_respects_limit(tmp_path, monkeypatch) -> None:
     fix_module = _load_fix_tags_module()
-    audio_path = tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    audio_path = (
+        tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    )
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"fake-audio")
     captured_limits: list[int | None] = []
@@ -77,7 +83,9 @@ def test_fix_tags_refresh_respects_limit(tmp_path, monkeypatch) -> None:
         def __init__(self, filename, easy=True):
             self.filename = filename
             self.saved = False
-            self.update({"artist": ["Wrong Artist"], "albumartist": ["Wrong Album Artist"]})
+            self.update(
+                {"artist": ["Wrong Artist"], "albumartist": ["Wrong Album Artist"]}
+            )
 
         def get(self, key, default=None):
             return dict.get(self, key, default)
@@ -103,7 +111,9 @@ def test_fix_tags_refresh_respects_limit(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(fix_module, "_HAS_MUTAGEN", True)
     monkeypatch.setattr(fix_module, "MutagenFile", FakeMutagenFile)
     monkeypatch.setattr(fix_module, "refresh_library_index", fake_refresh_library_index)
-    monkeypatch.setattr(fix_module, "list_tag_fix_candidates", lambda *args, **kwargs: [audio_path])
+    monkeypatch.setattr(
+        fix_module, "list_tag_fix_candidates", lambda *args, **kwargs: [audio_path]
+    )
     monkeypatch.setattr(
         fix_module,
         "_run_musicbrainz_enrichment",
@@ -128,9 +138,13 @@ def test_fix_tags_refresh_respects_limit(tmp_path, monkeypatch) -> None:
     assert any("selected 1 candidate file(s)" in line for line in lines)
 
 
-def test_fix_tags_forwards_remaining_limit_to_musicbrainz_pass(tmp_path, monkeypatch) -> None:
+def test_fix_tags_forwards_remaining_limit_to_musicbrainz_pass(
+    tmp_path, monkeypatch
+) -> None:
     fix_module = _load_fix_tags_module()
-    audio_path = tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    audio_path = (
+        tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    )
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"fake-audio")
     captured_limits: list[int | None] = []
@@ -140,7 +154,9 @@ def test_fix_tags_forwards_remaining_limit_to_musicbrainz_pass(tmp_path, monkeyp
         def __init__(self, filename, easy=True):
             self.filename = filename
             self.saved = False
-            self.update({"artist": ["Wrong Artist"], "albumartist": ["Wrong Album Artist"]})
+            self.update(
+                {"artist": ["Wrong Artist"], "albumartist": ["Wrong Album Artist"]}
+            )
 
         def get(self, key, default=None):
             return dict.get(self, key, default)
@@ -168,7 +184,9 @@ def test_fix_tags_forwards_remaining_limit_to_musicbrainz_pass(tmp_path, monkeyp
             "xml_scan_skipped": int(kwargs.get("scan_xml_sidecars") is False),
         },
     )
-    monkeypatch.setattr(fix_module, "list_tag_fix_candidates", lambda *args, **kwargs: [audio_path])
+    monkeypatch.setattr(
+        fix_module, "list_tag_fix_candidates", lambda *args, **kwargs: [audio_path]
+    )
 
     def fake_enrichment(*args, **kwargs):
         captured_limits.append(kwargs.get("limit"))

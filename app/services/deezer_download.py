@@ -120,16 +120,25 @@ class DeezerDownloadService:
         track: PlaylistTrack,
         match: dict[str, Any],
         *,
-        download_progress: Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None = None,
+        download_progress: (
+            Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None
+        ) = None,
     ) -> dict[str, Any]:
         provider = str(match.get("provider", "deezer")).strip().lower()
         if provider == "soundcloud":
-            if not self.soundcloud_service or not self.soundcloud_service.is_configured():
-                raise ValueError("SoundCloud fallback is not configured for this sync job.")
+            if (
+                not self.soundcloud_service
+                or not self.soundcloud_service.is_configured()
+            ):
+                raise ValueError(
+                    "SoundCloud fallback is not configured for this sync job."
+                )
             return self.soundcloud_service.resolve_track_selection(track, match)
         if provider == "youtube":
             if not self.youtube_service or not self.youtube_service.is_configured():
-                raise ValueError("YouTube fallback is not configured for this sync job.")
+                raise ValueError(
+                    "YouTube fallback is not configured for this sync job."
+                )
             return self.youtube_service.resolve_track_selection(track, match)
 
         self._validate_configuration()
@@ -237,7 +246,8 @@ class DeezerDownloadService:
                     key
                     for key, item in progress_items.items()
                     if item.get("completed_at_ts", 0)
-                    and now_ts - float(item.get("completed_at_ts", 0)) >= completed_ttl_seconds
+                    and now_ts - float(item.get("completed_at_ts", 0))
+                    >= completed_ttl_seconds
                 ]
                 for key in expired_keys:
                     progress_items.pop(key, None)
@@ -373,7 +383,9 @@ class DeezerDownloadService:
         self,
         track: PlaylistTrack,
         *,
-        download_progress: Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None = None,
+        download_progress: (
+            Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None
+        ) = None,
     ) -> dict[str, Any]:
         log.info("Processing: %r by %r", track.title, track.artist)
         result = self._build_result(track)
@@ -417,7 +429,9 @@ class DeezerDownloadService:
                 self.match_threshold,
             )
             result["status"] = "low_confidence"
-            result["message"] = "Best Deezer match was below the configured confidence threshold."
+            result["message"] = (
+                "Best Deezer match was below the configured confidence threshold."
+            )
             return result
 
         try:
@@ -456,7 +470,9 @@ class DeezerDownloadService:
         result: dict[str, Any],
         match: dict[str, Any],
         *,
-        download_progress: Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None = None,
+        download_progress: (
+            Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None
+        ) = None,
     ) -> dict[str, Any]:
         resolved_recording_mbid = self._ensure_musicbrainz_recording_id(track, match)
         updated_track_number = self._ensure_track_number(track, match)
@@ -529,13 +545,19 @@ class DeezerDownloadService:
         soundcloud_ranked: list[dict[str, Any]] = []
         if self.soundcloud_service and self.soundcloud_service.is_configured():
             try:
-                soundcloud_ranked = self.soundcloud_service.search_track(track, limit=limit)
+                soundcloud_ranked = self.soundcloud_service.search_track(
+                    track, limit=limit
+                )
             except Exception as exc:
                 log.warning("SoundCloud search failed for %r: %s", track.title, exc)
         merged = self._merge_candidates(deezer_ranked, soundcloud_ranked)
 
         youtube_ranked: list[dict[str, Any]] = []
-        if include_youtube and self.youtube_service and self.youtube_service.is_configured():
+        if (
+            include_youtube
+            and self.youtube_service
+            and self.youtube_service.is_configured()
+        ):
             try:
                 youtube_ranked = self.youtube_service.search_track(track, limit=limit)
             except Exception as exc:
@@ -614,7 +636,9 @@ class DeezerDownloadService:
                     or item.get("album", {}).get("cover")
                     or ""
                 ),
-                "track_number": item.get("track_position") or item.get("track_number") or 0,
+                "track_number": item.get("track_position")
+                or item.get("track_number")
+                or 0,
                 "duration_seconds": item.get("duration"),
                 "source_kind": "external",
             }
@@ -628,7 +652,10 @@ class DeezerDownloadService:
     def _ensure_authenticated(self) -> None:
         if self._api_token and self._license_token:
             return
-        log.info("Authenticating with Deezer (ARL: ...%s)", self.arl[-8:] if self.arl else "?")
+        log.info(
+            "Authenticating with Deezer (ARL: ...%s)",
+            self.arl[-8:] if self.arl else "?",
+        )
         with self._client(timeout=15.0) as client:
             client.cookies.update({"arl": self.arl})
             response = client.post(
@@ -649,7 +676,9 @@ class DeezerDownloadService:
             data = payload.get("results", {})
 
         self._api_token = str(data.get("checkForm", ""))
-        self._license_token = str(data.get("USER", {}).get("OPTIONS", {}).get("license_token", ""))
+        self._license_token = str(
+            data.get("USER", {}).get("OPTIONS", {}).get("license_token", "")
+        )
         if not self._api_token or not self._license_token:
             raise RuntimeError(
                 "Deezer authentication failed — checkForm or license_token missing. "
@@ -702,7 +731,8 @@ class DeezerDownloadService:
                         {
                             "type": "FULL",
                             "formats": [
-                                {"cipher": "BF_CBC_STRIPE", "format": fmt} for fmt in formats
+                                {"cipher": "BF_CBC_STRIPE", "format": fmt}
+                                for fmt in formats
                             ],
                         }
                     ],
@@ -730,7 +760,9 @@ class DeezerDownloadService:
         match: dict[str, Any],
         track: PlaylistTrack,
         *,
-        download_progress: Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None = None,
+        download_progress: (
+            Callable[[PlaylistTrack, dict[str, Any], int, int], None] | None
+        ) = None,
     ) -> tuple[Path, Path]:
         track_token = self._get_track_token(deezer_id)
         if not track_token:
@@ -774,15 +806,28 @@ class DeezerDownloadService:
         # Enforce strict tag completeness and safety after download
         tag_ok, tag_errors = self._validate_tag_completeness(output_path, match, track)
         if not tag_ok:
-            log.error("Tag completeness validation failed for %s: %s", output_path, tag_errors)
+            log.error(
+                "Tag completeness validation failed for %s: %s", output_path, tag_errors
+            )
             # Optionally, remove or quarantine the file here
             raise RuntimeError(f"Downloaded file failed tag completeness: {tag_errors}")
-    def _validate_tag_completeness(self, audio_path: Path, match: dict[str, Any], track: PlaylistTrack) -> tuple[bool, list[str]]:
+
+    def _validate_tag_completeness(
+        self, audio_path: Path, match: dict[str, Any], track: PlaylistTrack
+    ) -> tuple[bool, list[str]]:
         """Check that all required tags (MusicBrainz, Deezer, core fields) are present and file is safe."""
         from app.services.song_metadata import load_embedded_audio_metadata
+
         tags = load_embedded_audio_metadata(audio_path)
         errors = []
-        required = ["title", "artist", "album", "track_number", "musicbrainz_track_id", "deezer_id"]
+        required = [
+            "title",
+            "artist",
+            "album",
+            "track_number",
+            "musicbrainz_track_id",
+            "deezer_id",
+        ]
         for key in required:
             value = str(tags.get(key, "")).strip()
             if not value or value.lower() in {"", "unknown", "0"}:
@@ -821,7 +866,9 @@ class DeezerDownloadService:
         artist = _safe_name(match.get("artist", "") or track.artist or "Unknown Artist")
         album = _safe_name(match.get("album", "") or track.album or "Unknown Album")
         title = _safe_name(match.get("title", "") or track.title or "Unknown Track")
-        track_number = _coerce_track_number(match.get("track_number") or track.track_number)
+        track_number = _coerce_track_number(
+            match.get("track_number") or track.track_number
+        )
         return build_download_path(
             self.download_dir,
             self.download_path_template,
@@ -841,14 +888,20 @@ class DeezerDownloadService:
         deezer_id: int | str,
         fmt: str,
     ) -> Path:
-        annotation = str(track.extra.get("annotation", "")) if isinstance(track.extra, dict) else ""
+        annotation = (
+            str(track.extra.get("annotation", ""))
+            if isinstance(track.extra, dict)
+            else ""
+        )
         recording_mbid, _release_mbid = self._musicbrainz_ids_from_track(track)
         return write_song_metadata_xml(
             audio_path,
             title=str(match.get("title", "") or track.title or audio_path.stem),
             artist=str(match.get("artist", "") or track.artist or ""),
             album=str(match.get("album", "") or track.album or ""),
-            track_number=_coerce_track_number(match.get("track_number") or track.track_number),
+            track_number=_coerce_track_number(
+                match.get("track_number") or track.track_number
+            ),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="deezer",
             deezer_id=deezer_id,
@@ -872,14 +925,20 @@ class DeezerDownloadService:
         deezer_id: int | str,
         fmt: str,
     ) -> Path:
-        annotation = str(track.extra.get("annotation", "")) if isinstance(track.extra, dict) else ""
+        annotation = (
+            str(track.extra.get("annotation", ""))
+            if isinstance(track.extra, dict)
+            else ""
+        )
         recording_mbid, _release_mbid = self._musicbrainz_ids_from_track(track)
         return write_flac_tags(
             audio_path,
             title=str(match.get("title", "") or track.title or audio_path.stem),
             artist=str(match.get("artist", "") or track.artist or ""),
             album=str(match.get("album", "") or track.album or ""),
-            track_number=_coerce_track_number(match.get("track_number") or track.track_number),
+            track_number=_coerce_track_number(
+                match.get("track_number") or track.track_number
+            ),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="deezer",
             deezer_id=deezer_id,
@@ -907,7 +966,9 @@ class DeezerDownloadService:
 
         root = Path(self.navidrome_music_root)
         if not root.is_dir():
-            log.warning("Library check skipped — NAVIDROME_MUSIC_ROOT does not exist: %s", root)
+            log.warning(
+                "Library check skipped — NAVIDROME_MUSIC_ROOT does not exist: %s", root
+            )
             return None
 
         artist = _safe_name(match.get("artist", "") or track.artist or "")
@@ -961,7 +1022,9 @@ class DeezerDownloadService:
     def _provider_name(self) -> str:
         return "deezer"
 
-    def _ensure_track_number(self, track: PlaylistTrack, match: dict[str, Any]) -> int | None:
+    def _ensure_track_number(
+        self, track: PlaylistTrack, match: dict[str, Any]
+    ) -> int | None:
         track_number = _coerce_track_number(track.track_number)
         if track_number:
             return track_number
@@ -1011,13 +1074,19 @@ class DeezerDownloadService:
                     release_name=album_name,
                 )
             except Exception as exc:
-                log.warning("ListenBrainz recording lookup failed for %s: %s", label, exc)
+                log.warning(
+                    "ListenBrainz recording lookup failed for %s: %s", label, exc
+                )
             else:
-                recording_mbid = str(listenbrainz_metadata.get("recording_mbid") or "").strip()
+                recording_mbid = str(
+                    listenbrainz_metadata.get("recording_mbid") or ""
+                ).strip()
                 if recording_mbid:
                     extra["musicbrainz_recording_id"] = recording_mbid
                     if not release_mbid:
-                        release_mbid = str(listenbrainz_metadata.get("release_mbid") or "").strip()
+                        release_mbid = str(
+                            listenbrainz_metadata.get("release_mbid") or ""
+                        ).strip()
                         if release_mbid:
                             extra["musicbrainz_release_id"] = release_mbid
                     log.info(
@@ -1036,7 +1105,9 @@ class DeezerDownloadService:
                     album_name=album_name,
                 )
             except Exception as exc:
-                log.warning("MusicBrainz recording lookup failed for %s: %s", label, exc)
+                log.warning(
+                    "MusicBrainz recording lookup failed for %s: %s", label, exc
+                )
             else:
                 if recording_mbid:
                     extra["musicbrainz_recording_id"] = recording_mbid

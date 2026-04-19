@@ -65,25 +65,26 @@ def test_parse_jspf_accepts_identifier_lists_from_listenbrainz() -> None:
     assert tracks[0].title == "Shake It Off"
     assert tracks[0].artist == "Taylor Swift"
     assert (
-        tracks[0].source == "https://musicbrainz.org/recording/59fc5ddf-a1d9-4746-902d-71fb5a9a78c2"
+        tracks[0].source
+        == "https://musicbrainz.org/recording/59fc5ddf-a1d9-4746-902d-71fb5a9a78c2"
     )
 
 
 def test_parse_uploaded_downloaded_jspf_with_utf8_bom() -> None:
     content = (
-        '\ufeff{'
+        "\ufeff{"
         '"playlist": {'
         '"title": "Downloaded Mix",'
         '"track": ['
-        '{'
+        "{"
         '"title": "Windowlicker",'
         '"creator": "Aphex Twin",'
         '"album": "Windowlicker",'
         '"identifier": "https://musicbrainz.org/recording/demo"'
-        '}'
-        ']'
-        '}'
-        '}'
+        "}"
+        "]"
+        "}"
+        "}"
     )
 
     tracks = parse_uploaded_playlist("downloaded.jspf", content.encode("utf-8"))
@@ -183,7 +184,9 @@ def test_parse_navidrome_missing_csv_extracts_metadata() -> None:
         "Nine Inch Nails - Pretty Hate Machine - Terrible Lie.ogg\n"
     )
 
-    tracks = parse_uploaded_playlist("navidrome_missing.csv", csv_content.encode("utf-8"))
+    tracks = parse_uploaded_playlist(
+        "navidrome_missing.csv", csv_content.encode("utf-8")
+    )
 
     assert len(tracks) == 2
     assert tracks[0].artist == "Theory of a Deadman"

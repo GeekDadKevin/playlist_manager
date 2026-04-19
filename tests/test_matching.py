@@ -18,11 +18,17 @@ def test_build_search_queries_prefers_artist_and_title() -> None:
 
 
 def test_rank_candidates_prefers_best_match() -> None:
-    track = PlaylistTrack(title="Teardrop", artist="Massive Attack", duration_seconds=245)
+    track = PlaylistTrack(
+        title="Teardrop", artist="Massive Attack", duration_seconds=245
+    )
     candidates = [
         {"title": "Teardrop", "artist": "Massive Attack", "duration_seconds": 245},
         {"title": "Tear Drop", "artist": "Attack Massive", "duration_seconds": 250},
-        {"title": "Completely Different", "artist": "Someone Else", "duration_seconds": 180},
+        {
+            "title": "Completely Different",
+            "artist": "Someone Else",
+            "duration_seconds": 180,
+        },
     ]
 
     ranked = rank_candidates(track, candidates)

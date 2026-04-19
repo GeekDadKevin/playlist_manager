@@ -6,6 +6,7 @@ Run:
 
 MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,7 +70,9 @@ def main() -> int:
                 "LIBRARY_INDEX_DB_PATH": str(
                     os.getenv(
                         "LIBRARY_INDEX_DB_PATH",
-                        Path(__file__).resolve().parent.parent / "data" / "library_index.db",
+                        Path(__file__).resolve().parent.parent
+                        / "data"
+                        / "library_index.db",
                     )
                 ),
                 "DATA_DIR": str(

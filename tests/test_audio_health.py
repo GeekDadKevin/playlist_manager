@@ -10,7 +10,9 @@ from app.services.audio_health import check_audio_file, iter_audio_files
 def _load_check_audio_module():
     repo_root = __import__("pathlib").Path(__file__).resolve().parents[1]
     module_path = repo_root / "scripts" / "check_audio_health.py"
-    spec = importlib.util.spec_from_file_location("check_audio_health_test_module", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "check_audio_health_test_module", module_path
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -38,7 +40,9 @@ def test_check_audio_file_marks_zero_byte_files_as_errors(tmp_path) -> None:
     assert result.message == "Zero-byte file."
 
 
-def test_check_audio_file_warns_when_ffmpeg_passes_but_mutagen_fails(tmp_path, monkeypatch) -> None:
+def test_check_audio_file_warns_when_ffmpeg_passes_but_mutagen_fails(
+    tmp_path, monkeypatch
+) -> None:
     audio_path = tmp_path / "suspicious.mp3"
     audio_path.write_bytes(b"not-really-an-mp3")
 
@@ -57,11 +61,15 @@ def test_check_audio_file_warns_when_ffmpeg_passes_but_mutagen_fails(tmp_path, m
     assert "FFmpeg decode passed" in result.message
 
 
-def test_check_audio_file_uses_ffmpeg_failure_as_corruption_signal(tmp_path, monkeypatch) -> None:
+def test_check_audio_file_uses_ffmpeg_failure_as_corruption_signal(
+    tmp_path, monkeypatch
+) -> None:
     audio_path = tmp_path / "corrupt.m4a"
     audio_path.write_bytes(b"not-really-an-m4a")
 
-    monkeypatch.setattr("app.services.audio_health._run_mutagen_parse_check", lambda path: "")
+    monkeypatch.setattr(
+        "app.services.audio_health._run_mutagen_parse_check", lambda path: ""
+    )
     monkeypatch.setattr(
         "app.services.audio_health._run_ffmpeg_decode_check",
         lambda path, ffmpeg_path: "Invalid data found when processing input",
@@ -73,7 +81,9 @@ def test_check_audio_file_uses_ffmpeg_failure_as_corruption_signal(tmp_path, mon
     assert result.message == "Invalid data found when processing input"
 
 
-def test_check_library_falls_back_when_catalog_refresh_is_locked(tmp_path, monkeypatch) -> None:
+def test_check_library_falls_back_when_catalog_refresh_is_locked(
+    tmp_path, monkeypatch
+) -> None:
     check_module = _load_check_audio_module()
     audio_path = tmp_path / "clean.flac"
     audio_path.write_bytes(b"audio")
@@ -87,14 +97,22 @@ def test_check_library_falls_back_when_catalog_refresh_is_locked(tmp_path, monke
             sqlite3.OperationalError("database is locked")
         ),
     )
-    monkeypatch.setattr(check_module, "check_audio_file", lambda path, ffmpeg_path=None: __import__(
-        "app.services.audio_health", fromlist=["AudioCheckResult"]
-    ).AudioCheckResult(path=path, status="ok", message=""))
+    monkeypatch.setattr(
+        check_module,
+        "check_audio_file",
+        lambda path, ffmpeg_path=None: __import__(
+            "app.services.audio_health", fromlist=["AudioCheckResult"]
+        ).AudioCheckResult(path=path, status="ok", message=""),
+    )
 
-    lines, exit_code = check_module.check_library(tmp_path, full_scan=True, db_path=db_path)
+    lines, exit_code = check_module.check_library(
+        tmp_path, full_scan=True, db_path=db_path
+    )
 
     assert exit_code == 0
-    assert any("falling back to direct filesystem scan" in line.lower() for line in lines)
+    assert any(
+        "falling back to direct filesystem scan" in line.lower() for line in lines
+    )
     assert any("CHECK: 1/1" in line for line in lines)
     assert any("OK: clean.flac" in line for line in lines)
 
@@ -116,7 +134,9 @@ def test_check_library_emits_refresh_discovery_progress(tmp_path, monkeypatch) -
         ).AudioCheckResult(path=path, status="ok", message=""),
     )
 
-    lines, exit_code = check_module.check_library(tmp_path, full_scan=True, db_path=db_path)
+    lines, exit_code = check_module.check_library(
+        tmp_path, full_scan=True, db_path=db_path
+    )
 
     assert exit_code == 0
     assert any("PROGRESS: discovered 1 audio file(s) so far" in line for line in lines)
@@ -148,8 +168,12 @@ def test_check_library_refresh_skips_xml_sidecars(tmp_path, monkeypatch) -> None
             "xml_scan_skipped": 1,
         }
 
-    monkeypatch.setattr(check_module, "refresh_library_index", fake_refresh_library_index)
-    monkeypatch.setattr(check_module, "count_indexed_audio_files", lambda db_path_value, root: 1)
+    monkeypatch.setattr(
+        check_module, "refresh_library_index", fake_refresh_library_index
+    )
+    monkeypatch.setattr(
+        check_module, "count_indexed_audio_files", lambda db_path_value, root: 1
+    )
     monkeypatch.setattr(
         check_module,
         "list_audio_health_candidates",
@@ -163,7 +187,9 @@ def test_check_library_refresh_skips_xml_sidecars(tmp_path, monkeypatch) -> None
         ).AudioCheckResult(path=path, status="ok", message=""),
     )
 
-    lines, exit_code = check_module.check_library(tmp_path, full_scan=True, db_path=db_path)
+    lines, exit_code = check_module.check_library(
+        tmp_path, full_scan=True, db_path=db_path
+    )
 
     assert exit_code == 0
     assert captured["scan_xml_sidecars"] is False
@@ -193,8 +219,12 @@ def test_check_library_refresh_respects_limit(tmp_path, monkeypatch) -> None:
             "xml_scan_skipped": 1,
         }
 
-    monkeypatch.setattr(check_module, "refresh_library_index", fake_refresh_library_index)
-    monkeypatch.setattr(check_module, "count_indexed_audio_files", lambda db_path_value, root: 1)
+    monkeypatch.setattr(
+        check_module, "refresh_library_index", fake_refresh_library_index
+    )
+    monkeypatch.setattr(
+        check_module, "count_indexed_audio_files", lambda db_path_value, root: 1
+    )
     monkeypatch.setattr(
         check_module,
         "list_audio_health_candidates",

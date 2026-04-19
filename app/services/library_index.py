@@ -1,4 +1,23 @@
+
 from __future__ import annotations
+
+# Utility: List all unique album directories from the DB for a given root
+def list_album_dirs_from_db(db_path: str | Path, root: str | Path) -> list[Path]:
+    """Return all unique album directories (parent folders of audio files) from the library DB for the given root."""
+    init_library_index(db_path)
+    root_path = Path(root).expanduser().resolve()
+    with _connect_for_read(db_path) as conn:
+        rows = conn.execute(
+            "SELECT relative_path FROM library_files WHERE root_path = ? AND file_missing = 0",
+            (str(root_path),),
+        ).fetchall()
+    album_dirs = set()
+    for row in rows:
+        rel_path = row["relative_path"]
+        parent = Path(rel_path).parent
+        if str(parent) and str(parent) != ".":
+            album_dirs.add(root_path / parent)
+    return sorted(album_dirs)
 
 import json
 import os
@@ -92,7 +111,7 @@ def init_library_index(db_path: str | Path) -> None:
                 updated_at TEXT NOT NULL,
                 UNIQUE(root_path, relative_path)
             )
-            """
+            """,
         )
         _execute_write(
             conn,
@@ -109,7 +128,7 @@ def init_library_index(db_path: str | Path) -> None:
                 error_count INTEGER NOT NULL DEFAULT 0,
                 result_json TEXT NOT NULL DEFAULT '{}'
             )
-            """
+            """,
         )
         _execute_write(
             conn,
@@ -128,28 +147,28 @@ def init_library_index(db_path: str | Path) -> None:
                 updated_at TEXT NOT NULL,
                 UNIQUE(root_path, relative_xml_path)
             )
-            """
+            """,
         )
         _execute_write(
             conn,
-            "CREATE INDEX IF NOT EXISTS idx_library_files_root ON library_files(root_path)"
+            "CREATE INDEX IF NOT EXISTS idx_library_files_root ON library_files(root_path)",
         )
         _execute_write(
             conn,
             "CREATE INDEX IF NOT EXISTS idx_library_files_audio_health "
             "ON library_files(root_path, file_missing, audio_health_status, "
-            "audio_health_checked_at)"
+            "audio_health_checked_at)",
         )
         _execute_write(
             conn,
             "CREATE INDEX IF NOT EXISTS idx_library_files_xml_state "
             "ON library_files(root_path, file_missing, xml_exists, "
-            "xml_core_complete, downloaded_from)"
+            "xml_core_complete, downloaded_from)",
         )
         _execute_write(
             conn,
             "CREATE INDEX IF NOT EXISTS idx_library_xml_sidecars_root "
-            "ON library_xml_sidecars(root_path, paired_audio_exists)"
+            "ON library_xml_sidecars(root_path, paired_audio_exists)",
         )
         _ensure_library_files_column(
             conn,
@@ -196,7 +215,9 @@ def refresh_library_index(
 
     root_path = Path(root).expanduser().resolve()
     if not root_path.exists() or not root_path.is_dir():
-        raise ValueError(f"Music library root does not exist or is not a directory: {root_path}")
+        raise ValueError(
+            f"Music library root does not exist or is not a directory: {root_path}"
+        )
 
     indexed_at = _utc_now()
     partial_refresh = limit is not None
@@ -209,6 +230,41 @@ def refresh_library_index(
     seen_relative_paths: set[str] = set()
 
     with _connect(db_path) as conn:
+        db_rows = {}
+        disk_paths = {}
+        to_remove = set()
+        to_check = set()
+        db_count = 0
+        # Query all files in DB for this root
+        for row in conn.execute(
+            "SELECT * FROM library_files WHERE root_path = ?", (str(root_path),)
+        ):
+            rel = row["relative_path"]
+            db_rows[rel] = row
+            db_count += 1
+            if progress_callback and (db_count == 1 or db_count % 250 == 0):
+                _emit_progress(progress_callback, f"PROGRESS: querying DB for existing files... {db_count} so far")
+        if progress_callback:
+            _emit_progress(progress_callback, f"PROGRESS: finished DB query, {db_count} files found.")
+        disk_count = 0
+        # Find all audio files on disk
+        for audio_path in root_path.rglob("*"):
+            if audio_path.is_file() and audio_path.suffix.lower() in AUDIO_EXTENSIONS:
+                rel = audio_path.relative_to(root_path).as_posix()
+                disk_paths[rel] = audio_path
+                disk_count += 1
+                if progress_callback and (disk_count == 1 or disk_count % 250 == 0):
+                    _emit_progress(progress_callback, f"PROGRESS: scanning disk for audio files... {disk_count} so far")
+        if progress_callback:
+            _emit_progress(progress_callback, f"PROGRESS: finished disk scan, {disk_count} files found.")
+        if progress_callback:
+            _emit_progress(progress_callback, f"PROGRESS: comparing DB and disk state...")
+        # Files in DB but not on disk: to_remove
+        to_remove = set(db_rows) - set(disk_paths)
+        # Files on disk that are in DB: to_check
+        to_check = set(db_rows) & set(disk_paths)
+        if progress_callback:
+            _emit_progress(progress_callback, f"PROGRESS: {len(to_remove)} files to remove, {len(to_check)} files to check for changes...")
         # --- XML sidecar scan (unchanged) ---
         if scan_xml_sidecars:
             _emit_progress(progress_callback, "PROGRESS: building XML sidecar list...")
@@ -226,21 +282,13 @@ def refresh_library_index(
                     continue
                 xml_scanned += 1
                 relative_xml_path = xml_path.relative_to(root_path).as_posix()
-                if xml_index == 1 or xml_index % 250 == 0:
+                if xml_index == 1 or xml_index % 250 == 0 or xml_index == len(xml_paths):
                     xml_total = f" / {len(xml_paths)}" if partial_refresh else ""
                     _emit_progress(
                         progress_callback,
                         f"PROGRESS: XML sidecars indexed {xml_index}{xml_total}",
                     )
-                paired_audio_path = _paired_audio_path_for_xml(xml_path)
-                parse_ok = 0
-                error_message = ""
-                try:
-                    ET.parse(xml_path)
-                    parse_ok = 1
-                except (ET.ParseError, OSError) as exc:
-                    error_message = str(exc)
-                now = _utc_now()
+                # Insert XML sidecar
                 _execute_write(
                     conn,
                     """
@@ -279,138 +327,48 @@ def refresh_library_index(
                         now,
                     ),
                 )
-        else:
-            _emit_progress(
-                progress_callback,
-                "PROGRESS: skipping XML sidecar scan for audio-only refresh",
-            )
 
-        # --- Fast audio file diff and index ---
-        _emit_progress(progress_callback, "PROGRESS: scanning audio file tree for fast diff...")
-        disk_paths = {}
-        for audio_path in _iter_audio_files(root_path, progress_callback=progress_callback):
-            rel = audio_path.relative_to(root_path).as_posix()
-            disk_paths[rel] = audio_path
-        db_rows = {
-            str(row["relative_path"]): row
-            for row in conn.execute(
-                "SELECT * FROM library_files WHERE root_path = ?",
-                (str(root_path),),
-            ).fetchall()
-        }
-        disk_set = set(disk_paths.keys())
-        db_set = set(db_rows.keys())
-        to_add = disk_set - db_set
-        to_remove = db_set - disk_set
-        to_check = disk_set & db_set
-        # Add new files
-        for rel in sorted(to_add):
-            audio_path = disk_paths[rel]
-            scanned += 1
-            stat = audio_path.stat()
-            modified_at = _iso_from_timestamp(stat.st_mtime)
-            size_bytes = int(stat.st_size)
-            xml_path = audio_path.with_suffix(".xml")
-            xml_exists = xml_path.exists()
-            xml_modified_at = _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
-            xml_state = _summarize_xml_state(xml_path)
-            xml_changed += 1 if xml_exists else 0
-            embedded_state = _summarize_embedded_state(audio_path)
-            embedded_changed += 1
-            created_at = indexed_at
-            _execute_write(
-                conn,
-                """
-                INSERT INTO library_files (
-                    root_path, relative_path, audio_path, extension, size_bytes, modified_at,
-                    discovered_at, last_indexed_at, file_missing, xml_path, xml_exists, xml_modified_at,
-                    xml_parse_ok, xml_error, xml_has_title, xml_has_artist, xml_has_album, xml_has_downloaded_from,
-                    xml_has_deezer_id, xml_has_musicbrainz_track_id, xml_core_complete, title, artist, album, provider,
-                    downloaded_from, deezer_id, musicbrainz_track_id, embedded_title, embedded_artist, embedded_album,
-                    embedded_albumartist, embedded_track_number, embedded_musicbrainz_album_id, embedded_musicbrainz_artist_id,
-                    embedded_musicbrainz_albumartist_id, embedded_deezer_id, embedded_musicbrainz_track_id, musicbrainz_verified_at,
-                    embedded_tags_checked_at, created_at, updated_at
-                ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                )
-                ON CONFLICT(root_path, relative_path) DO UPDATE SET
-                    audio_path = excluded.audio_path,
-                    extension = excluded.extension,
-                    size_bytes = excluded.size_bytes,
-                    modified_at = excluded.modified_at,
-                    last_indexed_at = excluded.last_indexed_at,
-                    file_missing = excluded.file_missing,
-                    xml_path = excluded.xml_path,
-                    xml_exists = excluded.xml_exists,
-                    xml_modified_at = excluded.xml_modified_at,
-                    xml_parse_ok = excluded.xml_parse_ok,
-                    xml_error = excluded.xml_error,
-                    xml_has_title = excluded.xml_has_title,
-                    xml_has_artist = excluded.xml_has_artist,
-                    xml_has_album = excluded.xml_has_album,
-                    xml_has_downloaded_from = excluded.xml_has_downloaded_from,
-                    xml_has_deezer_id = excluded.xml_has_deezer_id,
-                    xml_has_musicbrainz_track_id = excluded.xml_has_musicbrainz_track_id,
-                    xml_core_complete = excluded.xml_core_complete,
-                    title = excluded.title,
-                    artist = excluded.artist,
-                    album = excluded.album,
-                    provider = excluded.provider,
-                    downloaded_from = excluded.downloaded_from,
-                    deezer_id = excluded.deezer_id,
-                    musicbrainz_track_id = excluded.musicbrainz_track_id,
-                    embedded_title = excluded.embedded_title,
-                    embedded_artist = excluded.embedded_artist,
-                    embedded_album = excluded.embedded_album,
-                    embedded_albumartist = excluded.embedded_albumartist,
-                    embedded_track_number = excluded.embedded_track_number,
-                    embedded_musicbrainz_album_id = excluded.embedded_musicbrainz_album_id,
-                    embedded_musicbrainz_artist_id = excluded.embedded_musicbrainz_artist_id,
-                    embedded_musicbrainz_albumartist_id = excluded.embedded_musicbrainz_albumartist_id,
-                    embedded_deezer_id = excluded.embedded_deezer_id,
-                    embedded_musicbrainz_track_id = excluded.embedded_musicbrainz_track_id,
-                    musicbrainz_verified_at = library_files.musicbrainz_verified_at,
-                    embedded_tags_checked_at = excluded.embedded_tags_checked_at,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    str(root_path), rel, str(audio_path), audio_path.suffix.lower(), size_bytes, modified_at,
-                    created_at, indexed_at, 0, str(xml_path), int(xml_exists), xml_modified_at,
-                    xml_state["xml_parse_ok"], xml_state["xml_error"], xml_state["xml_has_title"], xml_state["xml_has_artist"],
-                    xml_state["xml_has_album"], xml_state["xml_has_downloaded_from"], xml_state["xml_has_deezer_id"],
-                    xml_state["xml_has_musicbrainz_track_id"], xml_state["xml_core_complete"], xml_state["title"],
-                    xml_state["artist"], xml_state["album"], xml_state["provider"], xml_state["downloaded_from"],
-                    xml_state["deezer_id"], xml_state["musicbrainz_track_id"], embedded_state["embedded_title"],
-                    embedded_state["embedded_artist"], embedded_state["embedded_album"], embedded_state["embedded_albumartist"],
-                    embedded_state["embedded_track_number"], embedded_state["embedded_musicbrainz_album_id"],
-                    embedded_state["embedded_musicbrainz_artist_id"], embedded_state["embedded_musicbrainz_albumartist_id"],
-                    embedded_state["embedded_deezer_id"], embedded_state["embedded_musicbrainz_track_id"], "", embedded_state["embedded_tags_checked_at"],
-                    created_at, indexed_at
-                ),
-            )
-            changed += 1
         # Remove missing files
-        for rel in sorted(to_remove):
+        total_to_remove = len(to_remove)
+        if total_to_remove > 0 and progress_callback:
+            _emit_progress(progress_callback, f"PROGRESS: removing {total_to_remove} missing files from DB...")
+        for idx, rel in enumerate(sorted(to_remove), start=1):
             _delete_library_file_row(
                 conn,
                 root_path=root_path,
                 relative_path=rel,
             )
             changed += 1
+            if progress_callback and (
+                idx == 1 or idx % 100 == 0 or idx == total_to_remove
+            ):
+                _emit_progress(
+                    progress_callback,
+                    f"PROGRESS: removed {idx}/{total_to_remove} missing audio files from DB...",
+                )
+
         # Check for changed files (mtime/size)
-        for rel in sorted(to_check):
+        total_to_check = len(to_check)
+        if total_to_check > 0 and progress_callback:
+            _emit_progress(progress_callback, f"PROGRESS: checking {total_to_check} files for changes...")
+        for idx, rel in enumerate(sorted(to_check), start=1):
             audio_path = disk_paths[rel]
             row = db_rows[rel]
             stat = audio_path.stat()
             modified_at = _iso_from_timestamp(stat.st_mtime)
             size_bytes = int(stat.st_size)
-            if int(row["size_bytes"] or 0) == size_bytes and str(row["modified_at"] or "") == modified_at:
+            if (
+                int(row["size_bytes"] or 0) == size_bytes
+                and str(row["modified_at"] or "") == modified_at
+            ):
                 unchanged += 1
                 continue
             # Only update if changed
             xml_path = audio_path.with_suffix(".xml")
             xml_exists = xml_path.exists()
-            xml_modified_at = _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
+            xml_modified_at = (
+                _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
+            )
             xml_state = _summarize_xml_state(xml_path)
             xml_changed += 1 if xml_exists else 0
             embedded_state = _summarize_embedded_state(audio_path)
@@ -447,8 +405,8 @@ def refresh_library_index(
                     xml_has_artist = excluded.xml_has_artist,
                     xml_has_album = excluded.xml_has_album,
                     xml_has_downloaded_from = excluded.xml_has_downloaded_from,
-                    xml_has_deezer_id = excluded.xml_has_deezer_id,
-                    xml_has_musicbrainz_track_id = excluded.xml_has_musicbrainz_track_id,
+                    xml_has_deezer_id = excluded.deezer_id,
+                    xml_has_musicbrainz_track_id = excluded.musicbrainz_track_id,
                     xml_core_complete = excluded.xml_core_complete,
                     title = excluded.title,
                     artist = excluded.artist,
@@ -472,21 +430,53 @@ def refresh_library_index(
                     updated_at = excluded.updated_at
                 """,
                 (
-                    str(root_path), rel, str(audio_path), audio_path.suffix.lower(), size_bytes, modified_at,
-                    created_at, indexed_at, 0, str(xml_path), int(xml_exists), xml_modified_at,
-                    xml_state["xml_parse_ok"], xml_state["xml_error"], xml_state["xml_has_title"], xml_state["xml_has_artist"],
-                    xml_state["xml_has_album"], xml_state["xml_has_downloaded_from"], xml_state["xml_has_deezer_id"],
-                    xml_state["xml_has_musicbrainz_track_id"], xml_state["xml_core_complete"], xml_state["title"],
-                    xml_state["artist"], xml_state["album"], xml_state["provider"], xml_state["downloaded_from"],
-                    xml_state["deezer_id"], xml_state["musicbrainz_track_id"], embedded_state["embedded_title"],
-                    embedded_state["embedded_artist"], embedded_state["embedded_album"], embedded_state["embedded_albumartist"],
-                    embedded_state["embedded_track_number"], embedded_state["embedded_musicbrainz_album_id"],
-                    embedded_state["embedded_musicbrainz_artist_id"], embedded_state["embedded_musicbrainz_albumartist_id"],
-                    embedded_state["embedded_deezer_id"], embedded_state["embedded_musicbrainz_track_id"], str(row["musicbrainz_verified_at"] or ""),
-                    embedded_state["embedded_tags_checked_at"], created_at, indexed_at
+                    str(root_path),
+                    rel,
+                    str(audio_path),
+                    audio_path.suffix.lower(),
+                    size_bytes,
+                    modified_at,
+                    created_at,
+                    indexed_at,
+                    0,
+                    str(xml_path),
+                    int(xml_exists),
+                    xml_modified_at,
+                    xml_state["xml_parse_ok"],
+                    xml_state["xml_error"],
+                    xml_state["xml_has_title"],
+                    xml_state["xml_has_artist"],
+                    xml_state["xml_has_album"],
+                    xml_state["xml_has_downloaded_from"],
+                    xml_state["xml_has_deezer_id"],
+                    xml_state["xml_has_musicbrainz_track_id"],
+                    xml_state["xml_core_complete"],
+                    xml_state["title"],
+                    xml_state["artist"],
+                    xml_state["album"],
+                    xml_state["provider"],
+                    xml_state["downloaded_from"],
+                    xml_state["deezer_id"],
+                    xml_state["musicbrainz_track_id"],
+                    embedded_state["embedded_title"],
+                    embedded_state["embedded_artist"],
+                    embedded_state["embedded_album"],
+                    embedded_state["embedded_albumartist"],
+                    embedded_state["embedded_track_number"],
+                    embedded_state["embedded_musicbrainz_album_id"],
+                    embedded_state["embedded_musicbrainz_artist_id"],
+                    embedded_state["embedded_musicbrainz_albumartist_id"],
+                    embedded_state["embedded_deezer_id"],
+                    embedded_state["embedded_musicbrainz_track_id"],
+                    str(row["musicbrainz_verified_at"] or ""),
+                    embedded_state["embedded_tags_checked_at"],
+                    created_at,
+                    indexed_at,
                 ),
             )
             changed += 1
+            if progress_callback and (idx == 1 or idx % 100 == 0 or idx == total_to_check):
+                _emit_progress(progress_callback, f"PROGRESS: checked {idx}/{total_to_check} files for changes...")
         conn.commit()
 
     _emit_progress(
@@ -518,7 +508,9 @@ def refresh_library_index_for_paths(
 
     root_path = Path(root).expanduser().resolve()
     if not root_path.exists() or not root_path.is_dir():
-        raise ValueError(f"Music library root does not exist or is not a directory: {root_path}")
+        raise ValueError(
+            f"Music library root does not exist or is not a directory: {root_path}"
+        )
 
     indexed_at = _utc_now()
     scanned = 0
@@ -551,7 +543,10 @@ def refresh_library_index_for_paths(
                 ),
                 (
                     str(root_path),
-                    *(path.relative_to(root_path).as_posix() for path in selected_paths),
+                    *(
+                        path.relative_to(root_path).as_posix()
+                        for path in selected_paths
+                    ),
                 ),
             ).fetchall()
         }
@@ -576,7 +571,9 @@ def refresh_library_index_for_paths(
             size_bytes = int(stat.st_size)
             xml_path = audio_path.with_suffix(".xml")
             xml_exists = xml_path.exists()
-            xml_modified_at = _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
+            xml_modified_at = (
+                _iso_from_timestamp(xml_path.stat().st_mtime) if xml_exists else ""
+            )
 
             xml_state = _empty_xml_state(xml_path)
             if row is not None:
@@ -587,7 +584,9 @@ def refresh_library_index_for_paths(
                         "xml_has_title": int(row["xml_has_title"] or 0),
                         "xml_has_artist": int(row["xml_has_artist"] or 0),
                         "xml_has_album": int(row["xml_has_album"] or 0),
-                        "xml_has_downloaded_from": int(row["xml_has_downloaded_from"] or 0),
+                        "xml_has_downloaded_from": int(
+                            row["xml_has_downloaded_from"] or 0
+                        ),
                         "xml_has_deezer_id": int(row["xml_has_deezer_id"] or 0),
                         "xml_has_musicbrainz_track_id": int(
                             row["xml_has_musicbrainz_track_id"] or 0
@@ -659,7 +658,9 @@ def refresh_library_index_for_paths(
                 "xml_exists": int(xml_exists),
                 "xml_modified_at": xml_modified_at,
             }
-            if row is None or any(current_values[key] != row[key] for key in current_values):
+            if row is None or any(
+                current_values[key] != row[key] for key in current_values
+            ):
                 changed += 1
             else:
                 unchanged += 1
@@ -795,7 +796,11 @@ def refresh_library_index_for_paths(
                     embedded_state["embedded_musicbrainz_albumartist_id"],
                     embedded_state["embedded_deezer_id"],
                     embedded_state["embedded_musicbrainz_track_id"],
-                    str(row["musicbrainz_verified_at"] or "") if row is not None else "",
+                    (
+                        str(row["musicbrainz_verified_at"] or "")
+                        if row is not None
+                        else ""
+                    ),
                     embedded_state["embedded_tags_checked_at"],
                     created_at,
                     indexed_at,
@@ -817,7 +822,9 @@ def refresh_library_index_for_paths(
     }
 
 
-def _emit_progress(progress_callback: Callable[[str], None] | None, message: str) -> None:
+def _emit_progress(
+    progress_callback: Callable[[str], None] | None, message: str
+) -> None:
     if progress_callback is not None:
         progress_callback(message)
 
@@ -888,10 +895,7 @@ def list_incomplete_xml_pairs(
         params.append(limit)
     with _connect(db_path) as conn:
         rows = conn.execute(query, tuple(params)).fetchall()
-    return [
-        (Path(str(row["xml_path"])), Path(str(row["audio_path"])))
-        for row in rows
-    ]
+    return [(Path(str(row["xml_path"])), Path(str(row["audio_path"]))) for row in rows]
 
 
 def list_xml_id_repair_candidates(
@@ -920,10 +924,7 @@ def list_xml_id_repair_candidates(
         params.append(limit)
     with _connect(db_path) as conn:
         rows = conn.execute(" ".join(query), tuple(params)).fetchall()
-    return [
-        (Path(str(row["xml_path"])), Path(str(row["audio_path"])))
-        for row in rows
-    ]
+    return [(Path(str(row["xml_path"])), Path(str(row["audio_path"]))) for row in rows]
 
 
 def get_library_report_counts(db_path: str | Path, root: str | Path) -> dict[str, int]:
@@ -1054,7 +1055,9 @@ def list_library_report_items(
             return [
                 {
                     "path": str(row["relative_path"]),
-                    "detail": str(row["audio_health_message"] or row["audio_health_status"]),
+                    "detail": str(
+                        row["audio_health_message"] or row["audio_health_status"]
+                    ),
                     "badge": str(row["audio_health_status"] or "error"),
                 }
                 for row in rows
@@ -1138,7 +1141,9 @@ def _describe_musicbrainz_pending(row: sqlite3.Row) -> str:
 
 
 def _musicbrainz_pending_badge(row: sqlite3.Row) -> str:
-    return "stale" if str(row["musicbrainz_verified_at"] or "").strip() else "unverified"
+    return (
+        "stale" if str(row["musicbrainz_verified_at"] or "").strip() else "unverified"
+    )
 
 
 def list_audio_health_candidates(
@@ -1202,7 +1207,10 @@ def list_tag_fix_candidates(
             current_albumartist = str(row["embedded_albumartist"] or "").strip()
             expected_artist = expected["artist"]
             expected_albumartist = expected["albumartist"]
-            if current_artist != expected_artist or current_albumartist != expected_albumartist:
+            if (
+                current_artist != expected_artist
+                or current_albumartist != expected_albumartist
+            ):
                 candidates.append(Path(str(row["audio_path"])))
 
         if limit is not None and len(candidates) >= limit:
@@ -1247,12 +1255,18 @@ def list_musicbrainz_tag_candidates(
             album = str(row["embedded_album"] or "").strip()
             albumartist = str(row["embedded_albumartist"] or "").strip()
             track_number = str(row["embedded_track_number"] or "").strip()
-            musicbrainz_album_id = str(row["embedded_musicbrainz_album_id"] or "").strip()
-            musicbrainz_artist_id = str(row["embedded_musicbrainz_artist_id"] or "").strip()
+            musicbrainz_album_id = str(
+                row["embedded_musicbrainz_album_id"] or ""
+            ).strip()
+            musicbrainz_artist_id = str(
+                row["embedded_musicbrainz_artist_id"] or ""
+            ).strip()
             musicbrainz_albumartist_id = str(
                 row["embedded_musicbrainz_albumartist_id"] or ""
             ).strip()
-            musicbrainz_track_id = str(row["embedded_musicbrainz_track_id"] or "").strip()
+            musicbrainz_track_id = str(
+                row["embedded_musicbrainz_track_id"] or ""
+            ).strip()
             musicbrainz_verified_at = str(row["musicbrainz_verified_at"] or "").strip()
             modified_at = str(row["modified_at"] or "").strip()
 
@@ -1305,8 +1319,14 @@ def list_structure_tag_candidates(
         else:
             if (
                 (guessed.get("title") and not str(row["embedded_title"] or "").strip())
-                or (guessed.get("artist") and not str(row["embedded_artist"] or "").strip())
-                or (guessed.get("album") and not str(row["embedded_album"] or "").strip())
+                or (
+                    guessed.get("artist")
+                    and not str(row["embedded_artist"] or "").strip()
+                )
+                or (
+                    guessed.get("album")
+                    and not str(row["embedded_album"] or "").strip()
+                )
                 or (
                     guessed.get("albumartist")
                     and not str(row["embedded_albumartist"] or "").strip()
@@ -1607,7 +1627,9 @@ def _iter_audio_files(
         dirnames.sort()
         filenames.sort()
         current_path = Path(current_root)
-        relative_dir = current_path.relative_to(root).as_posix() if current_path != root else "."
+        relative_dir = (
+            current_path.relative_to(root).as_posix() if current_path != root else "."
+        )
 
         for filename in filenames:
             path = current_path / filename
@@ -1626,26 +1648,22 @@ def _summarize_xml_state(xml_path: Path) -> dict[str, Any]:
     state = _empty_xml_state(xml_path)
     if not xml_path.exists() or not xml_path.is_file():
         return state
-
+    # Parse XML for fields
     try:
-        metadata = load_song_metadata_xml(xml_path)
-        ET.parse(xml_path)
-    except (ET.ParseError, OSError) as exc:
-        state["xml_error"] = str(exc)
-        return state
-
-    title = str(metadata.get("title") or "").strip()
-    artist = str(metadata.get("performingartist") or metadata.get("artist") or "").strip()
-    album = str(metadata.get("albumtitle") or metadata.get("album") or "").strip()
-    provider = str(metadata.get("provider") or "").strip().casefold()
-    downloaded_from = normalize_downloaded_from(
-        metadata.get("downloadedfrom"),
-        provider=provider,
-        source=metadata.get("source"),
-    )
-    deezer_id = str(metadata.get("deezerid") or "").strip()
-    musicbrainz_track_id = str(metadata.get("musicbrainztrackid") or "").strip()
-
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        def get_text(tag):
+            el = root.find(tag)
+            return el.text.strip() if el is not None and el.text else ""
+        title = get_text("title")
+        artist = get_text("performingartist") or get_text("artist")
+        album = get_text("albumtitle") or get_text("album")
+        provider = get_text("provider")
+        downloaded_from = get_text("downloaded_from") or get_text("downloadedfrom") or "unknown"
+        deezer_id = get_text("deezerid")
+        musicbrainz_track_id = get_text("musicbrainztrackid")
+    except Exception:
+        title = artist = album = provider = downloaded_from = deezer_id = musicbrainz_track_id = ""
     state.update(
         {
             "xml_parse_ok": 1,
@@ -1677,7 +1695,9 @@ def _summarize_embedded_state(audio_path: Path) -> dict[str, Any]:
         "embedded_artist": str(metadata.get("artist") or "").strip(),
         "embedded_album": str(metadata.get("album") or "").strip(),
         "embedded_albumartist": str(metadata.get("albumartist") or "").strip(),
-        "embedded_track_number": _normalize_track_number_text(metadata.get("track_number")),
+        "embedded_track_number": _normalize_track_number_text(
+            metadata.get("track_number")
+        ),
         "embedded_musicbrainz_album_id": str(
             metadata.get("musicbrainz_album_id") or ""
         ).strip(),
@@ -1688,7 +1708,9 @@ def _summarize_embedded_state(audio_path: Path) -> dict[str, Any]:
             metadata.get("musicbrainz_albumartist_id") or ""
         ).strip(),
         "embedded_deezer_id": str(metadata.get("deezer_id") or "").strip(),
-        "embedded_musicbrainz_track_id": str(metadata.get("musicbrainz_track_id") or "").strip(),
+        "embedded_musicbrainz_track_id": str(
+            metadata.get("musicbrainz_track_id") or ""
+        ).strip(),
         "embedded_tags_checked_at": _utc_now(),
     }
 
@@ -1713,13 +1735,18 @@ def _describe_incomplete_xml(row: sqlite3.Row) -> str:
         missing.append("downloaded_from")
     if int(row["xml_has_musicbrainz_track_id"] or 0) == 0:
         missing.append("musicbrainztrackid")
-    if str(row["downloaded_from"] or "") == "deezer" and int(row["xml_has_deezer_id"] or 0) == 0:
+    if (
+        str(row["downloaded_from"] or "") == "deezer"
+        and int(row["xml_has_deezer_id"] or 0) == 0
+    ):
         missing.append("deezerid")
     return "Missing: " + ", ".join(missing)
 
 
 def _expected_tag_targets(relative_path: str) -> dict[str, str] | None:
-    parts = [part.strip() for part in str(relative_path or "").split("/") if part.strip()]
+    parts = [
+        part.strip() for part in str(relative_path or "").split("/") if part.strip()
+    ]
     if len(parts) < 3:
         return None
 
@@ -1818,7 +1845,9 @@ def _ensure_library_files_column(
     }
     if column_name in existing_columns:
         return
-    _execute_write(conn, f"ALTER TABLE library_files ADD COLUMN {column_name} {definition}")
+    _execute_write(
+        conn, f"ALTER TABLE library_files ADD COLUMN {column_name} {definition}"
+    )
 
 
 def _delete_library_file_row(
@@ -1849,7 +1878,9 @@ def _track_number_missing(value: str) -> bool:
     return normalized == ""
 
 
-def _normalize_selected_audio_paths(root_path: Path, audio_paths: list[str | Path]) -> list[Path]:
+def _normalize_selected_audio_paths(
+    root_path: Path, audio_paths: list[str | Path]
+) -> list[Path]:
     normalized: list[Path] = []
     seen: set[str] = set()
     for value in audio_paths:

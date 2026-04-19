@@ -12,7 +12,10 @@ from app.models import PlaylistTrack
 from app.services.cover_art import ensure_cover_art, pick_thumbnail_url
 from app.services.musicbrainz import MusicBrainzService
 from app.services.path_template import apply_audio_extension, build_download_path
-from app.services.song_metadata import extract_musicbrainz_track_id, write_song_metadata_xml
+from app.services.song_metadata import (
+    extract_musicbrainz_track_id,
+    write_song_metadata_xml,
+)
 
 try:  # pragma: no cover - exercised indirectly in runtime environments
     from yt_dlp import YoutubeDL
@@ -125,7 +128,9 @@ class YouTubeDownloadService:
                     continue
                 candidate = self._candidate_from_info(entry)
                 dedupe_key = str(
-                    candidate.get("youtube_id") or candidate.get("link") or candidate.get("id")
+                    candidate.get("youtube_id")
+                    or candidate.get("link")
+                    or candidate.get("id")
                 ).strip()
                 if not dedupe_key or dedupe_key in seen:
                     continue
@@ -194,7 +199,9 @@ class YouTubeDownloadService:
         if isinstance(duration, (int, float)) and duration > 10_000:
             duration = int(duration / 1000)
 
-        link = str(info.get("webpage_url") or info.get("original_url") or info.get("url") or "")
+        link = str(
+            info.get("webpage_url") or info.get("original_url") or info.get("url") or ""
+        )
         youtube_id = str(info.get("id") or "").strip()
         link = _normalize_youtube_link(link, youtube_id)
         raw_album = str(info.get("album") or "").strip()
@@ -210,7 +217,9 @@ class YouTubeDownloadService:
             ).strip(),
             "album": album,
             "album_fallback_used": not bool(raw_album),
-            "duration_seconds": int(duration) if isinstance(duration, (int, float)) else None,
+            "duration_seconds": (
+                int(duration) if isinstance(duration, (int, float)) else None
+            ),
             "link": link,
             "source_kind": "external",
         }
@@ -261,7 +270,9 @@ class YouTubeDownloadService:
         link = str(match.get("link") or "").strip()
         link = _normalize_youtube_link(link, match.get("youtube_id"))
         if not link:
-            raise ValueError("The selected YouTube match does not include a playable URL.")
+            raise ValueError(
+                "The selected YouTube match does not include a playable URL."
+            )
 
         stem_path = self._build_stem_path(match, track)
         stem_path.parent.mkdir(parents=True, exist_ok=True)
@@ -272,7 +283,9 @@ class YouTubeDownloadService:
         )
         output_path = self._resolve_downloaded_path(info, stem_path)
         if not output_path.exists():
-            raise ValueError("YouTube download finished, but no audio file was written.")
+            raise ValueError(
+                "YouTube download finished, but no audio file was written."
+            )
 
         desired_path = apply_audio_extension(stem_path, output_path.suffix)
         if output_path != desired_path:
@@ -293,7 +306,9 @@ class YouTubeDownloadService:
             title=resolved_title,
             artist=resolved_artist,
             album=resolved_album,
-            track_number=_coerce_track_number(match.get("track_number") or track.track_number),
+            track_number=_coerce_track_number(
+                match.get("track_number") or track.track_number
+            ),
             duration_seconds=match.get("duration_seconds") or track.duration_seconds,
             provider="youtube",
             quality=str(info.get("audio_ext") or info.get("ext") or ""),
@@ -336,7 +351,9 @@ class YouTubeDownloadService:
         artist = _safe_name(self._preferred_artist_name(track, match))
         album = _safe_name(self._preferred_album_name(match))
         title = _safe_name(str(match.get("title") or track.title or "Unknown Track"))
-        track_number = _coerce_track_number(match.get("track_number") or track.track_number)
+        track_number = _coerce_track_number(
+            match.get("track_number") or track.track_number
+        )
         return build_download_path(
             self.download_dir,
             self.download_path_template,
@@ -346,7 +363,9 @@ class YouTubeDownloadService:
             track_number=track_number,
         )
 
-    def _ensure_track_number(self, track: PlaylistTrack, match: dict[str, Any]) -> int | None:
+    def _ensure_track_number(
+        self, track: PlaylistTrack, match: dict[str, Any]
+    ) -> int | None:
         track_number = _coerce_track_number(track.track_number)
         if track_number:
             return track_number
@@ -415,7 +434,9 @@ class YouTubeDownloadService:
         album = str((info or {}).get("album") or "").strip()
         return album or "YouTube"
 
-    def _candidate_album_names(self, match: dict[str, Any], track: PlaylistTrack) -> list[str]:
+    def _candidate_album_names(
+        self, match: dict[str, Any], track: PlaylistTrack
+    ) -> list[str]:
         names: list[str] = []
         preferred = self._preferred_album_name(match)
         if preferred:
@@ -426,7 +447,9 @@ class YouTubeDownloadService:
             names.append(track_album)
         return names
 
-    def _find_in_library(self, match: dict[str, Any], track: PlaylistTrack) -> Path | None:
+    def _find_in_library(
+        self, match: dict[str, Any], track: PlaylistTrack
+    ) -> Path | None:
         if not self.navidrome_music_root:
             return None
 
@@ -446,7 +469,10 @@ class YouTubeDownloadService:
 
             try:
                 for candidate in album_dir.iterdir():
-                    if not candidate.is_file() or candidate.suffix.lower() not in _AUDIO_EXTENSIONS:
+                    if (
+                        not candidate.is_file()
+                        or candidate.suffix.lower() not in _AUDIO_EXTENSIONS
+                    ):
                         continue
                     stem_key = normalize_text(candidate.stem)
                     if title_key in stem_key or stem_key == title_key:
@@ -455,7 +481,9 @@ class YouTubeDownloadService:
                 return None
         return None
 
-    def _find_existing(self, match: dict[str, Any], track: PlaylistTrack) -> Path | None:
+    def _find_existing(
+        self, match: dict[str, Any], track: PlaylistTrack
+    ) -> Path | None:
         stem_path = self._build_stem_path(match, track)
         for ext in _AUDIO_EXTENSIONS:
             candidate = stem_path.with_suffix(ext)

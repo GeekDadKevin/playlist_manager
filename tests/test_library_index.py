@@ -22,9 +22,16 @@ from app.services.library_index import (
 from app.services.song_metadata import write_song_metadata_xml
 
 
-def test_refresh_library_index_tracks_xml_provenance_and_candidate_skips(tmp_path) -> None:
+def test_refresh_library_index_tracks_xml_provenance_and_candidate_skips(
+    tmp_path,
+) -> None:
     db_path = tmp_path / "library_index.db"
-    audio_path = tmp_path / "Boards of Canada" / "Music Has the Right to Children" / "Roygbiv.flac"
+    audio_path = (
+        tmp_path
+        / "Boards of Canada"
+        / "Music Has the Right to Children"
+        / "Roygbiv.flac"
+    )
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     audio_path.write_bytes(b"fake-flac")
     write_song_metadata_xml(
@@ -72,7 +79,9 @@ def test_refresh_library_index_marks_changed_files_for_revalidation(tmp_path) ->
     refresh_library_index(db_path, tmp_path)
 
     assert list_audio_health_candidates(db_path, tmp_path) == [audio_path]
-    assert list_audio_health_candidates(db_path, tmp_path, force_full=True) == [audio_path]
+    assert list_audio_health_candidates(db_path, tmp_path, force_full=True) == [
+        audio_path
+    ]
 
 
 def test_refresh_library_index_prunes_deleted_audio_files(tmp_path) -> None:
@@ -312,7 +321,9 @@ def test_library_reports_musicbrainz_stale_and_accepted_as_is(tmp_path) -> None:
 
 def test_library_index_lists_tag_fix_candidates_from_embedded_tags(tmp_path) -> None:
     db_path = tmp_path / "library_index.db"
-    normal_audio = tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    normal_audio = (
+        tmp_path / "Orbital" / "In Sides" / "Orbital - In Sides - 01 - The Moebius.flac"
+    )
     normal_audio.parent.mkdir(parents=True, exist_ok=True)
     normal_audio.write_bytes(b"audio-normal")
     va_audio = (
@@ -342,7 +353,9 @@ def test_library_index_lists_tag_fix_candidates_from_embedded_tags(tmp_path) -> 
     assert list_tag_fix_candidates(db_path, tmp_path) == [normal_audio, va_audio]
 
 
-def test_library_index_lists_musicbrainz_tag_candidates_for_missing_track_numbers(tmp_path) -> None:
+def test_library_index_lists_musicbrainz_tag_candidates_for_missing_track_numbers(
+    tmp_path,
+) -> None:
     db_path = tmp_path / "library_index.db"
     audio_path = tmp_path / "Burial" / "Untrue" / "Archangel.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,7 +390,9 @@ def test_library_index_lists_musicbrainz_tag_candidates_for_missing_track_number
     assert list_musicbrainz_tag_candidates(db_path, tmp_path) == [audio_path]
 
 
-def test_library_index_lists_musicbrainz_tag_candidates_for_missing_artist_ids(tmp_path) -> None:
+def test_library_index_lists_musicbrainz_tag_candidates_for_missing_artist_ids(
+    tmp_path,
+) -> None:
     db_path = tmp_path / "library_index.db"
     audio_path = tmp_path / "Burial" / "Untrue" / "Archangel.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)

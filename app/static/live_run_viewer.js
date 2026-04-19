@@ -88,11 +88,24 @@ window.PlaylistSyncLiveRunViewer = (() => {
     logEl.textContent = emptyText;
   }
 
-  return {
-    appendLine,
-    classify,
-    renderSummary,
-    resetLog,
-    setStatusChip,
-  };
+    function copyAllLog(logId) {
+      var logEl = document.getElementById(logId);
+      if (!logEl) return;
+      var text = '';
+      if (logEl.tagName === 'PRE' || logEl.tagName === 'DIV') {
+        text = logEl.innerText || logEl.textContent || '';
+      }
+      if (text) {
+        navigator.clipboard.writeText(text);
+      }
+    }
+
+    return {
+      appendLine,
+      classify,
+      renderSummary,
+      resetLog,
+      setStatusChip,
+      copyAllLog,
+    };
 })();

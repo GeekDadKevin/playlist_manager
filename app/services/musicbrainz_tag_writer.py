@@ -87,7 +87,9 @@ def write_musicbrainz_tags(audio_path: str | Path, details: dict[str, Any]) -> N
         _set_mp4_freeform(audio, "LABEL", normalized.get("label", ""))
         _set_mp4_freeform(audio, "CATALOGNUMBER", normalized.get("catalog_number", ""))
         _set_mp4_freeform(audio, "MEDIA", normalized.get("media_format", ""))
-        _set_mp4_freeform(audio, "RELEASECOUNTRY", normalized.get("release_country", ""))
+        _set_mp4_freeform(
+            audio, "RELEASECOUNTRY", normalized.get("release_country", "")
+        )
         _set_mp4_freeform(audio, "RELEASESTATUS", normalized.get("release_status", ""))
         _set_mp4_freeform(audio, "RELEASETYPE", normalized.get("release_type", ""))
         _set_mp4_freeform(
@@ -132,14 +134,20 @@ def write_musicbrainz_tags(audio_path: str | Path, details: dict[str, Any]) -> N
             if normalized.get("disc_total"):
                 disc_value = f"{disc_value}/{normalized['disc_total']}"
             _set_mp3_tag_text(audio, TPOS, disc_value)
-        _set_txxx_text(audio, "MusicBrainz Track Id", normalized.get("recording_mbid", ""))
-        _set_txxx_text(audio, "MusicBrainz Album Id", normalized.get("release_mbid", ""))
+        _set_txxx_text(
+            audio, "MusicBrainz Track Id", normalized.get("recording_mbid", "")
+        )
+        _set_txxx_text(
+            audio, "MusicBrainz Album Id", normalized.get("release_mbid", "")
+        )
         _set_txxx_text(
             audio,
             "MusicBrainz Release Group Id",
             normalized.get("release_group_mbid", ""),
         )
-        _set_txxx_text(audio, "MusicBrainz Artist Id", normalized.get("artist_mbid", ""))
+        _set_txxx_text(
+            audio, "MusicBrainz Artist Id", normalized.get("artist_mbid", "")
+        )
         _set_txxx_text(
             audio,
             "MusicBrainz Album Artist Id",

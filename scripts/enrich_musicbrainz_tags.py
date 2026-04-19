@@ -13,6 +13,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/enrich_musicbrainz_tags_<timestamp>.log
 (or cwd if the root is not writable).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,7 +29,9 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
-from app.services.audio_identification import lookup_musicbrainz_metadata_match  # noqa: E402
+from app.services.audio_identification import (
+    lookup_musicbrainz_metadata_match,
+)  # noqa: E402
 from app.services.library_index import (  # noqa: E402
     list_musicbrainz_tag_candidates,
     record_library_tool_run,
@@ -127,9 +130,7 @@ def _build_search_variants(audio_path: Path, root: Path) -> list[dict[str, str]]
         or guessed.get("album")
     ).strip()
     albumartist = str(
-        embedded.get("albumartist")
-        or xml_data.get("albumartist")
-        or artist
+        embedded.get("albumartist") or xml_data.get("albumartist") or artist
     ).strip()
 
     variants: list[dict[str, str]] = []
@@ -149,7 +150,9 @@ def _build_search_variants(audio_path: Path, root: Path) -> list[dict[str, str]]
             if _is_va_folder(dir_artist)
             else dir_artist
         )
-        fallback_albumartist = dir_artist if _is_va_folder(dir_artist) else fallback_artist
+        fallback_albumartist = (
+            dir_artist if _is_va_folder(dir_artist) else fallback_artist
+        )
         fallback = {
             "title": title,
             "artist": fallback_artist or artist,
@@ -240,13 +243,12 @@ def enrich_musicbrainz_tags(
 
     if selected_paths is not None:
         inventory_summary = None
-        candidates = selected_paths[:limit] if limit is not None else list(selected_paths)
-        _emit(
-            "  Using explicit selection of "
-            f"{len(candidates)} audio file(s) for MusicBrainz enrichment.",
-            lines,
+        candidates = (
+            selected_paths[:limit] if limit is not None else list(selected_paths)
         )
+        _emit(f"PROGRESS: using explicit selection of {len(candidates)} audio file(s) for MusicBrainz enrichment.", lines)
     else:
+        _emit(f"PROGRESS: refreshing catalog and selecting MusicBrainz candidates...", lines)
         inventory_summary = refresh_library_index(
             library_index_db,
             root,
@@ -260,12 +262,7 @@ def enrich_musicbrainz_tags(
             force_full=full_scan,
             limit=limit,
         )
-        _emit(
-            "  Indexed "
-            f"{inventory_summary['scanned']} audio file(s); "
-            f"selected {len(candidates)} candidate file(s) for MusicBrainz enrichment.",
-            lines,
-        )
+        _emit(f"PROGRESS: indexed {inventory_summary['scanned']} audio file(s); selected {len(candidates)} candidate file(s) for MusicBrainz enrichment.", lines)
 
     listenbrainz = ListenBrainzService.from_config(os.environ)
     musicbrainz = MusicBrainzService.from_config(os.environ)
@@ -274,8 +271,12 @@ def enrich_musicbrainz_tags(
     unresolved: list[str] = []
     failed = 0
 
+    if candidates:
+        _emit(f"PROGRESS: starting MusicBrainz enrichment for {len(candidates)} files...", lines)
     for index, audio_path in enumerate(candidates, start=1):
         relative_path = audio_path.relative_to(root)
+        if index == 1 or index % 100 == 0 or index == len(candidates):
+            _emit(f"PROGRESS: MusicBrainz enrichment progress: {index}/{len(candidates)} files", lines)
         _emit(f"CHECK MB TAGS: {index}/{len(candidates)}  {relative_path}", lines)
         details, variant = _lookup_details(
             audio_path,
@@ -477,7 +478,8 @@ def main() -> int:
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_name = f"enrich_musicbrainz_tags_{log_ts}.log"
-    log_dir = root if os.access(root, os.W_OK) else Path.cwd()
+    log_dir = Path(__file__).resolve().parent.parent / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / log_name
 
     try:

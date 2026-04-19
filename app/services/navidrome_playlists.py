@@ -47,7 +47,9 @@ def export_navidrome_playlist(
 
     stem, is_recurring = _build_playlist_stem(playlist_name)
     target_path = folder / f"{stem}.m3u"
-    removed_files = _remove_recurring_variants(folder, stem, target_path) if is_recurring else []
+    removed_files = (
+        _remove_recurring_variants(folder, stem, target_path) if is_recurring else []
+    )
     media_roots, media_path_prefix = _load_media_path_settings()
 
     lines = ["#EXTM3U"]
@@ -85,8 +87,12 @@ def export_navidrome_playlist(
                 continue
 
             seen_paths.add(media_path)
-            duration = track.get("duration_seconds") if isinstance(track, dict) else None
-            duration_value = str(int(duration)) if isinstance(duration, int | float) else "-1"
+            duration = (
+                track.get("duration_seconds") if isinstance(track, dict) else None
+            )
+            duration_value = (
+                str(int(duration)) if isinstance(duration, int | float) else "-1"
+            )
 
             lines.append(f"#EXTINF:{duration_value},{label}")
             lines.append(media_path)
@@ -134,7 +140,11 @@ def export_navidrome_playlist(
         "is_recurring": is_recurring,
         "overwritten": existed_before or bool(removed_files),
         "removed_files": removed_files,
-        "reason": f"{missing_count} track(s) are still pending download." if missing_count else "",
+        "reason": (
+            f"{missing_count} track(s) are still pending download."
+            if missing_count
+            else ""
+        ),
     }
 
 
@@ -277,7 +287,10 @@ def _find_existing_media_file(
             continue
 
         for candidate in files:
-            if not candidate.is_file() or candidate.suffix.casefold() not in _MEDIA_EXTENSIONS:
+            if (
+                not candidate.is_file()
+                or candidate.suffix.casefold() not in _MEDIA_EXTENSIONS
+            ):
                 continue
 
             score = _score_media_candidate(
@@ -304,7 +317,9 @@ def _candidate_library_directories(
     seen: set[str] = set()
 
     def add_directory(path_value: Path) -> None:
-        candidate = path_value.absolute() if not path_value.is_absolute() else path_value
+        candidate = (
+            path_value.absolute() if not path_value.is_absolute() else path_value
+        )
         key = str(candidate).casefold()
         if key in seen or not candidate.exists() or not candidate.is_dir():
             return
@@ -337,7 +352,9 @@ def _candidate_library_directories(
 
 def _source_parent_under_root(source: str, root_path: Path) -> Path | None:
     cleaned_source = source.replace("\\", "/").strip()
-    if not cleaned_source or cleaned_source.lower().startswith(("http://", "https://", "memory://")):
+    if not cleaned_source or cleaned_source.lower().startswith(
+        ("http://", "https://", "memory://")
+    ):
         return None
 
     relative_parts = [
@@ -474,7 +491,9 @@ def _candidate_has_accessible_root(candidate: Path, media_roots: list[str]) -> b
         if not normalized_root:
             continue
         lowered_root = normalized_root.casefold()
-        if lowered_candidate == lowered_root or lowered_candidate.startswith(f"{lowered_root}/"):
+        if lowered_candidate == lowered_root or lowered_candidate.startswith(
+            f"{lowered_root}/"
+        ):
             if _is_container_root_alias(root):
                 return False
             root_path = Path(root)
@@ -562,28 +581,33 @@ def _is_container_root_alias(value: str) -> bool:
 def _build_playlist_stem(playlist_name: str) -> tuple[str, bool]:
     cleaned_name = _BRACKET_PREFIX_RE.sub("", playlist_name).strip() or "playlist"
     lowered = cleaned_name.lower()
-    is_recurring = any(marker in lowered for marker in ("daily", "weekly", "day of", "week of"))
+    is_recurring = any(
+        marker in lowered for marker in ("daily", "weekly", "day of", "week of")
+    )
 
     if is_recurring:
         cleaned_name = _RECURRING_DATE_RE.sub("", cleaned_name).strip(" ,-_")
         cleaned_name = _RECURRING_FOR_RE.sub("", cleaned_name).strip(" ,-_")
         stem = _safe_recurring_filename(cleaned_name)
     else:
-        stem = secure_filename(cleaned_name).replace("_", "-").strip(".-").lower() or "playlist"
+        stem = (
+            secure_filename(cleaned_name).replace("_", "-").strip(".-").lower()
+            or "playlist"
+        )
 
     return stem, is_recurring
 
 
 def _safe_recurring_filename(value: str) -> str:
-    sanitized = re.sub(r'[<>:"/\\|?*]+', ' ', value)
-    sanitized = re.sub(r'\s+', ' ', sanitized).strip(' .-_')
+    sanitized = re.sub(r'[<>:"/\\|?*]+', " ", value)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip(" .-_")
     if sanitized and sanitized == sanitized.lower():
         sanitized = sanitized.title()
     return sanitized or "Playlist"
 
 
 def _stable_playlist_key(value: str) -> str:
-    return re.sub(r'[\s_-]+', '', value).strip('.-').casefold()
+    return re.sub(r"[\s_-]+", "", value).strip(".-").casefold()
 
 
 def _remove_recurring_variants(

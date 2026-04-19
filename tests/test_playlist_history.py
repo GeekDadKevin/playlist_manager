@@ -46,7 +46,9 @@ def test_settings_page_lists_tracked_playlists_and_stats(tmp_path) -> None:
                         "source": "https://musicbrainz.org/recording/teardrop",
                     },
                     "match": {"id": "ext-deezer-track-1", "score": 98},
-                    "resolved_match": {"path": "Massive Attack/Mezzanine/Teardrop.flac"},
+                    "resolved_match": {
+                        "path": "Massive Attack/Mezzanine/Teardrop.flac"
+                    },
                 },
                 {
                     "index": 2,
@@ -136,7 +138,9 @@ def test_reexport_playlist_from_history_to_navidrome_dir(tmp_path) -> None:
                         "album": "Windowlicker",
                         "source": "Aphex Twin/Windowlicker/Windowlicker.flac",
                     },
-                    "resolved_match": {"path": "Aphex Twin/Windowlicker/Windowlicker.flac"},
+                    "resolved_match": {
+                        "path": "Aphex Twin/Windowlicker/Windowlicker.flac"
+                    },
                     "match": {"id": "ext-deezer-track-4", "score": 97},
                 }
             ],
@@ -193,7 +197,11 @@ def test_playlist_history_reuses_saved_local_path_for_reexport(tmp_path) -> None
                             "Hail to the King/02 - Hail to the King.flac"
                         )
                     },
-                    "match": {"id": "local-song-1", "provider": "navidrome", "score": 99},
+                    "match": {
+                        "id": "local-song-1",
+                        "provider": "navidrome",
+                        "score": 99,
+                    },
                 }
             ],
         },
@@ -224,7 +232,11 @@ def test_playlist_history_reuses_saved_local_path_for_reexport(tmp_path) -> None
                         "album": "Hail to the King",
                         "source": "https://musicbrainz.org/recording/hail-to-the-king",
                     },
-                    "match": {"id": "ext-deezer-song-12345", "provider": "deezer", "score": 98},
+                    "match": {
+                        "id": "ext-deezer-song-12345",
+                        "provider": "deezer",
+                        "score": 98,
+                    },
                 }
             ],
         },

@@ -20,7 +20,9 @@ _PLAYLIST_PATH_RE = re.compile(
 def normalize_listenbrainz_url(url: str) -> str:
     normalized = url.strip()
     if not normalized:
-        raise ValueError("Provide a ListenBrainz playlist URL, playlist ID, or JSPF export URL.")
+        raise ValueError(
+            "Provide a ListenBrainz playlist URL, playlist ID, or JSPF export URL."
+        )
 
     if _UUID_RE.fullmatch(normalized):
         return f"https://listenbrainz.org/playlist/{normalized}/export/jspf"
@@ -84,7 +86,9 @@ class ListenBrainzService:
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> ListenBrainzService:
         return cls(
-            base_url=str(config.get("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")),
+            base_url=str(
+                config.get("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")
+            ),
             username=str(config.get("LISTENBRAINZ_USERNAME", "")),
             auth_token=str(config.get("LISTENBRAINZ_AUTH_TOKEN", "")),
         )
@@ -101,7 +105,9 @@ class ListenBrainzService:
             return []
 
         excluded_ids = {
-            playlist_id.lower() for playlist_id in (exclude_playlist_ids or set()) if playlist_id
+            playlist_id.lower()
+            for playlist_id in (exclude_playlist_ids or set())
+            if playlist_id
         }
         playlists: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
@@ -150,7 +156,9 @@ class ListenBrainzService:
         playlist = self._fetch_first_playlist()
         identifier = self._playlist_identifier(playlist)
         if not identifier:
-            raise ValueError("ListenBrainz returned a playlist without a usable identifier.")
+            raise ValueError(
+                "ListenBrainz returned a playlist without a usable identifier."
+            )
         return normalize_listenbrainz_url(identifier)
 
     def fetch_jspf_document(self, url: str = "") -> dict:
@@ -258,7 +266,9 @@ class ListenBrainzService:
         playlist = self._fetch_first_playlist()
         identifier = self._playlist_identifier(playlist)
         if not identifier:
-            raise ValueError("ListenBrainz returned a playlist without a usable identifier.")
+            raise ValueError(
+                "ListenBrainz returned a playlist without a usable identifier."
+            )
 
         api_url = build_listenbrainz_api_url(identifier, base_url=self.base_url)
         return api_url or normalize_listenbrainz_url(identifier)
@@ -324,7 +334,9 @@ class ListenBrainzService:
             return None
 
         playlist_id = extract_listenbrainz_playlist_id(identifier)
-        title = str(playlist.get("title") or playlist.get("name") or "Untitled Playlist").strip()
+        title = str(
+            playlist.get("title") or playlist.get("name") or "Untitled Playlist"
+        ).strip()
         description = str(playlist.get("description") or "").strip()
 
         return {
@@ -340,7 +352,10 @@ class ListenBrainzService:
     @staticmethod
     def _playlist_identifier(playlist: Mapping[str, Any]) -> str:
         return str(
-            playlist.get("identifier") or playlist.get("playlist_mbid") or playlist.get("id") or ""
+            playlist.get("identifier")
+            or playlist.get("playlist_mbid")
+            or playlist.get("id")
+            or ""
         ).strip()
 
     def _auth_headers(self) -> dict[str, str]:

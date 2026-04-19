@@ -180,7 +180,9 @@ def _lookup_wikidata_id(artist_mbid: str, *, client: httpx.Client | None = None)
     return ""
 
 
-def _lookup_wikidata_image(wikidata_id: str, *, client: httpx.Client | None = None) -> str:
+def _lookup_wikidata_image(
+    wikidata_id: str, *, client: httpx.Client | None = None
+) -> str:
     url = f"https://www.wikidata.org/wiki/Special:EntityData/{wikidata_id}.json"
     response = _request_json(url, client=client)
     entities = response.get("entities") if isinstance(response, dict) else {}
@@ -191,10 +193,14 @@ def _lookup_wikidata_image(wikidata_id: str, *, client: httpx.Client | None = No
         return ""
     mainsnak = p18[0].get("mainsnak") if isinstance(p18[0], dict) else None
     datavalue = mainsnak.get("datavalue") if isinstance(mainsnak, dict) else None
-    return str(datavalue.get("value") or "").strip() if isinstance(datavalue, dict) else ""
+    return (
+        str(datavalue.get("value") or "").strip() if isinstance(datavalue, dict) else ""
+    )
 
 
-def _lookup_commons_image_url(filename: str, *, client: httpx.Client | None = None) -> str:
+def _lookup_commons_image_url(
+    filename: str, *, client: httpx.Client | None = None
+) -> str:
     if not filename:
         return ""
     params = {

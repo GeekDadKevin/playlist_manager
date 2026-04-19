@@ -27,6 +27,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/fix_audio_tags_<timestamp>.log
 (or cwd if the root is not writable).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,6 +53,7 @@ from app.services.tool_output import emit_console_line  # noqa: E402
 
 try:
     from mutagen import File as MutagenFile  # type: ignore
+
     _HAS_MUTAGEN = True
 except ImportError:
     _HAS_MUTAGEN = False
@@ -80,18 +82,20 @@ def _artist_dir_for(audio_path: Path, root: Path) -> str:
 
 # Folder names that signal a Various-Artists compilation.
 # Comparison is case-insensitive and stripped.
-_VA_NAMES: frozenset[str] = frozenset({
-    "various artists",
-    "various",
-    "va",
-    "v.a.",
-    "v.a",
-    "compilations",
-    "compilation",
-    "soundtracks",
-    "soundtrack",
-    "ost",
-})
+_VA_NAMES: frozenset[str] = frozenset(
+    {
+        "various artists",
+        "various",
+        "va",
+        "v.a.",
+        "v.a",
+        "compilations",
+        "compilation",
+        "soundtracks",
+        "soundtrack",
+        "ost",
+    }
+)
 
 
 def _is_va_folder(folder_name: str) -> bool:
@@ -210,27 +214,25 @@ def fix_tags(
     total_fixed = 0
     changed_paths: list[Path] = []
     if selected_paths is not None:
-        all_audio = selected_paths[:limit] if limit is not None else list(selected_paths)
-        _emit(
-            f"  Using explicit selection of {len(all_audio)} audio file(s) for tag review.",
-            lines,
+        all_audio = (
+            selected_paths[:limit] if limit is not None else list(selected_paths)
         )
+        _emit(f"PROGRESS: using explicit selection of {len(all_audio)} audio file(s) for tag review.", lines)
     else:
+        _emit(f"PROGRESS: querying DB for tag-fix candidates...", lines)
         all_audio = list_tag_fix_candidates(
             library_index_db,
             root,
             force_full=full_scan,
             limit=limit if full_scan else None,
         )
-        _emit(
-            f"  Selected {len(all_audio)} candidate file(s) for tag review (from DB).",
-            lines,
-        )
+        _emit(f"PROGRESS: selected {len(all_audio)} candidate file(s) for tag review (from DB).", lines)
 
     total = len(all_audio)
-    _emit(f"  Found {total} candidate audio file(s) to check (from DB)", lines)
+    _emit(f"PROGRESS: found {total} candidate audio file(s) to check (from DB)", lines)
 
     # Partition files into normal vs various-artist folders.
+    _emit(f"PROGRESS: partitioning files into normal and VA folders...", lines)
     normal: list[Path] = []
     va: list[Path] = []
     skipped_depth = 0
@@ -253,8 +255,8 @@ def fix_tags(
             normal.append(audio_path)
 
     if skipped_depth:
-        _emit(f"  Skipped {skipped_depth} file(s) with insufficient folder depth.", lines)
-    _emit(f"  Normal files: {len(normal)}  VA files: {len(va)}", lines)
+        _emit(f"PROGRESS: skipped {skipped_depth} file(s) with insufficient folder depth.", lines)
+    _emit(f"PROGRESS: normal files: {len(normal)}  VA files: {len(va)}", lines)
 
     # ------------------------------------------------------------------
     # Pass 1: normal artist folders — set both artist and albumartist.
@@ -266,16 +268,15 @@ def fix_tags(
     p1_skipped = 0
     p1_failed = 0
 
+    if normal:
+        _emit(f"PROGRESS: starting Pass 1 (normal folders) for {len(normal)} files...", lines)
     for idx, audio_path in enumerate(normal):
         if limit is not None and total_fixed >= limit:
-            _emit(f"  ... limit of {limit} reached, stopping Pass 1 early.", lines)
+            _emit(f"PROGRESS: limit of {limit} reached, stopping Pass 1 early.", lines)
             break
 
-        if idx % 100 == 0 and idx:
-            _emit(
-                f"  ... scanned {idx}/{len(normal)} files ({p1_fixed} fixed so far)",
-                lines,
-            )
+        if idx == 0 or (idx + 1) % 100 == 0 or (idx + 1) == len(normal):
+            _emit(f"PROGRESS: Pass 1 progress: {idx + 1}/{len(normal)} files ({p1_fixed} fixed so far)", lines)
 
         canonical_artist = _artist_dir_for(audio_path, root)
         _emit(f"CHECK TAGS: {idx + 1}/{len(normal)}  {audio_path.relative_to(root)}", lines)
@@ -307,7 +308,9 @@ def fix_tags(
         if needs_artist:
             changes.append(f"artist: {current_artist!r} → {canonical_artist!r}")
         if needs_albumartist:
-            changes.append(f"albumartist: {current_albumartist!r} → {canonical_artist!r}")
+            changes.append(
+                f"albumartist: {current_albumartist!r} → {canonical_artist!r}"
+            )
 
         action = "[DRY-RUN] would fix" if dry_run else "FIXED"
         if not dry_run:
@@ -348,16 +351,15 @@ def fix_tags(
     p2_failed = 0
     p2_no_parse = 0
 
+    if va:
+        _emit(f"PROGRESS: starting Pass 2 (VA folders) for {len(va)} files...", lines)
     for idx, audio_path in enumerate(va):
         if limit is not None and total_fixed >= limit:
-            _emit(f"  ... limit of {limit} reached, skipping rest of Pass 2.", lines)
+            _emit(f"PROGRESS: limit of {limit} reached, skipping rest of Pass 2.", lines)
             break
 
-        if idx % 100 == 0 and idx:
-            _emit(
-                f"  ... scanned {idx}/{len(va)} VA files ({p2_fixed} fixed so far)",
-                lines,
-            )
+        if idx == 0 or (idx + 1) % 100 == 0 or (idx + 1) == len(va):
+            _emit(f"PROGRESS: Pass 2 progress: {idx + 1}/{len(va)} VA files ({p2_fixed} fixed so far)", lines)
 
         canonical_artist = _artist_dir_for(audio_path, root)  # e.g. "Various Artists"
         track_artist = _parse_artist_from_stem(audio_path.stem)
@@ -395,7 +397,9 @@ def fix_tags(
         if needs_artist:
             changes.append(f"artist: {current_artist!r} → {track_artist!r}")
         if needs_albumartist:
-            changes.append(f"albumartist: {current_albumartist!r} → {canonical_artist!r}")
+            changes.append(
+                f"albumartist: {current_albumartist!r} → {canonical_artist!r}"
+            )
 
         action = "[DRY-RUN] would fix" if dry_run else "FIXED"
         if not dry_run:
@@ -434,10 +438,13 @@ def fix_tags(
     musicbrainz_exit_code = 0
 
     _emit("", lines)
-    _emit("--- Pass 3: enriching missing MusicBrainz tags ---", lines)
+    _emit("PROGRESS: starting Pass 3 (MusicBrainz enrichment)...", lines)
     enrich_updated_paths = []
     if enrichment_limit == 0:
-        _emit("  ... limit already reached during folder-tag cleanup, skipping pass 3.", lines)
+        _emit(
+            "  ... limit already reached during folder-tag cleanup, skipping pass 3.",
+            lines,
+        )
     else:
         enrich_lines, musicbrainz_exit_code = _run_musicbrainz_enrichment(
             root,
@@ -488,7 +495,10 @@ def fix_tags(
         run_mode="full" if full_scan else "incremental",
         started_at=started_at,
         completed_at=datetime.datetime.now(datetime.UTC).isoformat(),
-        scanned_count=total + musicbrainz_updated + musicbrainz_unresolved + musicbrainz_failed,
+        scanned_count=total
+        + musicbrainz_updated
+        + musicbrainz_unresolved
+        + musicbrainz_failed,
         changed_count=total_changed,
         error_count=total_failed + musicbrainz_unresolved,
         result={
@@ -557,7 +567,8 @@ def main() -> int:
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_name = f"fix_audio_tags_{log_ts}.log"
-    log_dir = root if os.access(root, os.W_OK) else Path.cwd()
+    log_dir = Path(__file__).resolve().parent.parent / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / log_name
 
     try:

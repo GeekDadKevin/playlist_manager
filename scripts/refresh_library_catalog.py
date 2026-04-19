@@ -7,6 +7,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 This tool is read-only with respect to audio and XML files. It rebuilds the
 SQLite index used by the maintenance tools and browser reports.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,7 +52,9 @@ def refresh_catalog(
         )
     )
 
-    _emit(f"refresh_library_catalog  root={root}  limit={limit}  started={started}", lines)
+    _emit(
+        f"refresh_library_catalog  root={root}  limit={limit}  started={started}", lines
+    )
     _emit("=" * 72, lines)
     if limit is not None:
         _emit(
@@ -154,7 +157,8 @@ def main() -> int:
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_name = f"refresh_library_catalog_{log_ts}.log"
-    log_dir = root if os.access(root, os.W_OK) else Path.cwd()
+    log_dir = Path(__file__).resolve().parent.parent / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / log_name
 
     try:

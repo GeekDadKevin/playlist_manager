@@ -13,6 +13,7 @@ MUSIC_ROOT defaults to NAVIDROME_MUSIC_ROOT from .env.
 A timestamped log is written to MUSIC_ROOT/rebuild_song_xml_<timestamp>.log
 (or cwd if the root is not writable).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,6 +51,7 @@ from app.services.tool_output import emit_console_line  # noqa: E402
 # ---------------------------------------------------------------------------
 try:
     from mutagen import File as MutagenFile  # type: ignore
+
     _HAS_MUTAGEN = True
 except ImportError:
     _HAS_MUTAGEN = False
@@ -195,6 +197,7 @@ def _update_xml_fields(xml_path: Path, tags: dict[str, str], *, dry_run: bool) -
 # Core logic
 # ---------------------------------------------------------------------------
 
+
 def _emit(line: str, lines: list[str]) -> None:
     """Print a line immediately and append it to the log buffer."""
     emit_console_line(line)
@@ -245,26 +248,31 @@ def rebuild(
     # ------------------------------------------------------------------
     _emit("", lines)
     _emit("--- Pass 1: scanning for orphaned XML sidecars ---", lines)
+    if limit is not None:
+        _emit(f"  LIMIT: Only processing up to {limit} items in this pass.", lines)
 
     all_xml = list_orphaned_xml_paths(
         library_index_db,
         root,
-        limit=limit if dry_run else None,
+        limit=None,
     )
     total_xml = len(all_xml)
     _emit(f"  Found {total_xml} orphaned XML file(s) to check (from DB)", lines)
     for xml_path in all_xml:
+        if limit is not None and deleted >= limit:
+            _emit(f"  ... (limit of {limit} reached, stopping)", lines)
+            break
         scanned_xml += 1
-        _emit(f"CHECK ORPHAN XML: {scanned_xml}/{total_xml}  {xml_path.relative_to(root)}", lines)
+        _emit(
+            f"CHECK ORPHAN XML: {scanned_xml}/{total_xml}  {xml_path.relative_to(root)}",
+            lines,
+        )
         if scanned_xml % 100 == 0:
             _emit(
                 f"  ... scanned {scanned_xml}/{total_xml} XML files "
                 f"({deleted} orphaned so far)",
                 lines,
             )
-        if dry_run and limit is not None and deleted >= limit:
-            _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
-            break
         action = "[DRY-RUN] would delete" if dry_run else "DELETED"
         if not dry_run:
             try:
@@ -291,15 +299,20 @@ def rebuild(
     # ------------------------------------------------------------------
     _emit("", lines)
     _emit("--- Pass 2: scanning for audio files missing XML sidecars ---", lines)
+    if limit is not None:
+        _emit(f"  LIMIT: Only processing up to {limit} items in this pass.", lines)
 
     all_audio = list_missing_xml_audio_paths(
         library_index_db,
         root,
-        limit=limit if dry_run else None,
+        limit=None,
     )
     total_audio = len(all_audio)
     _emit(f"  Found {total_audio} audio file(s) missing XML sidecars (from DB)", lines)
     for audio_path in all_audio:
+        if limit is not None and created >= limit:
+            _emit(f"  ... (limit of {limit} reached, stopping)", lines)
+            break
         scanned_audio += 1
         _emit(
             f"CHECK MISSING XML: {scanned_audio}/{total_audio}  {audio_path.relative_to(root)}",
@@ -312,9 +325,6 @@ def rebuild(
                 lines,
             )
         xml_path = audio_path.with_suffix(".xml")
-        if dry_run and limit is not None and created >= limit:
-            _emit(f"  ... (dry-run limit of {limit} reached, stopping preview)", lines)
-            break
         _emit(f"  Reading tags: {audio_path.name}", lines)
         tags = _read_tags(audio_path, root)
         action = "[DRY-RUN] would create" if dry_run else "CREATED"
@@ -360,6 +370,8 @@ def rebuild(
     # ------------------------------------------------------------------
     _emit("", lines)
     _emit("--- Pass 3: fixing recovered metadata in existing XML sidecars ---", lines)
+    if limit is not None:
+        _emit(f"  LIMIT: Only processing up to {limit} items in this pass.", lines)
 
     fixed = 0
     scanned_fix = 0
@@ -374,7 +386,7 @@ def rebuild(
         else list_incomplete_xml_pairs(
             library_index_db,
             root,
-            limit=None if full_scan else (limit if dry_run else None),
+            limit=limit,
         )
     )
     if full_scan:
@@ -382,7 +394,9 @@ def rebuild(
             (xml_path, audio_path)
             for xml_path, audio_path in [
                 (path.with_suffix(".xml"), path)
-                for path in list_missing_xml_audio_paths(library_index_db, root, limit=None)
+                for path in list_missing_xml_audio_paths(
+                    library_index_db, root, limit=None
+                )
             ]
             if xml_path.exists()
         ] + all_xml_fix
@@ -410,8 +424,7 @@ def rebuild(
         if changed:
             action = "[DRY-RUN] would fix" if dry_run else "FIXED"
             _emit(
-                f"  {action}: {xml_path.name}"
-                f"  recovered metadata refreshed",
+                f"  {action}: {xml_path.name}" f"  recovered metadata refreshed",
                 lines,
             )
             fixed += 1
@@ -466,6 +479,7 @@ def rebuild(
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -482,11 +496,11 @@ def main() -> int:
     parser.add_argument(
         "--limit",
         type=int,
-        default=5,
+        default=None,
         metavar="N",
         help=(
-            "Max items to preview per pass in --dry-run mode (default: 5). "
-            "Ignored when not dry-running."
+            "Max items to process per pass. If not set, processes all items. "
+            "Recommended: use --limit for dry-run preview (e.g. 5)."
         ),
     )
     parser.add_argument(
@@ -512,7 +526,7 @@ def main() -> int:
     log_lines = rebuild(
         root,
         dry_run=args.dry_run,
-        limit=args.limit if args.dry_run else None,
+        limit=args.limit,
         full_scan=args.full_scan,
     )
 

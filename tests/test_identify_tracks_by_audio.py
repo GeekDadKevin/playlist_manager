@@ -19,7 +19,9 @@ def _load_identify_module():
     return module
 
 
-def test_identify_tracks_by_audio_updates_xml_for_selected_paths(tmp_path, monkeypatch) -> None:
+def test_identify_tracks_by_audio_updates_xml_for_selected_paths(
+    tmp_path, monkeypatch
+) -> None:
     identify_module = _load_identify_module()
     audio_path = tmp_path / "Massive Attack" / "Mezzanine" / "Teardrop.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +84,9 @@ def test_identify_tracks_by_audio_updates_xml_for_selected_paths(tmp_path, monke
     monkeypatch.setattr(
         identify_module,
         "_write_tags",
-        lambda audio_path, details: captured.setdefault("written_audio", str(audio_path)),
+        lambda audio_path, details: captured.setdefault(
+            "written_audio", str(audio_path)
+        ),
     )
     monkeypatch.setattr(
         identify_module,
@@ -111,12 +115,17 @@ def test_identify_tracks_by_audio_updates_xml_for_selected_paths(tmp_path, monke
     metadata_xml = audio_path.with_suffix(".xml").read_text(encoding="utf-8")
     assert "<musicbrainztrackid>recording-123</musicbrainztrackid>" in metadata_xml
     assert "<albumartist>Massive Attack</albumartist>" in metadata_xml
-    assert "<musicbrainzreleasegroupid>group-789</musicbrainzreleasegroupid>" in metadata_xml
+    assert (
+        "<musicbrainzreleasegroupid>group-789</musicbrainzreleasegroupid>"
+        in metadata_xml
+    )
     assert "<genre>Trip Hop</genre>" in metadata_xml
     assert "<barcode>724384559524</barcode>" in metadata_xml
 
 
-def test_identify_tracks_by_audio_reports_low_confidence_matches(tmp_path, monkeypatch) -> None:
+def test_identify_tracks_by_audio_reports_low_confidence_matches(
+    tmp_path, monkeypatch
+) -> None:
     identify_module = _load_identify_module()
     audio_path = tmp_path / "Unknown" / "Unknown Album" / "mystery.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -216,10 +225,15 @@ def test_identify_tracks_by_audio_records_no_match_items(tmp_path, monkeypatch) 
     review = captured["run"]["result"]["review"]
     assert review["low_confidence_count"] == 0
     assert review["no_match_count"] == 1
-    assert review["no_match_items"][0]["relative_path"] == "Unknown/Missing Album/ghost.flac"
+    assert (
+        review["no_match_items"][0]["relative_path"]
+        == "Unknown/Missing Album/ghost.flac"
+    )
 
 
-def test_identify_tracks_by_audio_falls_back_to_musicbrainz_metadata(tmp_path, monkeypatch) -> None:
+def test_identify_tracks_by_audio_falls_back_to_musicbrainz_metadata(
+    tmp_path, monkeypatch
+) -> None:
     identify_module = _load_identify_module()
     audio_path = tmp_path / "Unknown" / "Album" / "missing.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -278,7 +292,9 @@ def test_identify_tracks_by_audio_falls_back_to_musicbrainz_metadata(tmp_path, m
     assert review["no_match_count"] == 0
 
 
-def test_identify_tracks_by_audio_downgrades_suspicious_match(tmp_path, monkeypatch) -> None:
+def test_identify_tracks_by_audio_downgrades_suspicious_match(
+    tmp_path, monkeypatch
+) -> None:
     identify_module = _load_identify_module()
     audio_path = tmp_path / "2 LIVE CREW" / "Banned In the USA" / "06 - Strip Club.flac"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
@@ -423,7 +439,9 @@ def test_identify_tracks_by_audio_accepts_match_when_only_filename_guess_disagre
     assert review["no_match_count"] == 0
 
 
-def test_details_need_update_ignores_missing_optional_track_number(tmp_path, monkeypatch) -> None:
+def test_details_need_update_ignores_missing_optional_track_number(
+    tmp_path, monkeypatch
+) -> None:
     identify_module = _load_identify_module()
     audio_path = tmp_path / "10cc" / "The Original Soundtrack" / "track.mp3"
     audio_path.parent.mkdir(parents=True, exist_ok=True)

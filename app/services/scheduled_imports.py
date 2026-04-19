@@ -56,7 +56,9 @@ def run_scheduled_playlists(
 
     try:
         listenbrainz = ListenBrainzService(
-            base_url=str(config.get("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")),
+            base_url=str(
+                config.get("LISTENBRAINZ_API_BASE_URL", "https://api.listenbrainz.org")
+            ),
             username=str(config.get("LISTENBRAINZ_USERNAME", "")),
             auth_token=str(config.get("LISTENBRAINZ_AUTH_TOKEN", "")),
             playlist_type="createdfor",
@@ -86,7 +88,8 @@ def run_scheduled_playlists(
 
         downloader = DeezerDownloadService.from_config(config)
         navidrome_dir = str(
-            config.get("NAVIDROME_PLAYLISTS_DIR") or config.get("NAVIDROME_PLAYLIST_DIR", "")
+            config.get("NAVIDROME_PLAYLISTS_DIR")
+            or config.get("NAVIDROME_PLAYLIST_DIR", "")
         ).strip()
         upload_folder = str(config.get("UPLOAD_FOLDER", "")).strip()
         max_tracks = int(config.get("SYNC_MAX_TRACKS", 100))
@@ -105,11 +108,15 @@ def run_scheduled_playlists(
             )
 
             sync_mode = "export-only"
-            sync_results = [{"track": track.to_dict(), "match": {}} for track in upload.tracks]
+            sync_results = [
+                {"track": track.to_dict(), "match": {}} for track in upload.tracks
+            ]
             sync_snapshot: dict[str, Any] = {"summary": {}, "results": sync_results}
 
             if sync_with_downloads and downloader.is_configured():
-                download_result = downloader.sync_tracks(upload.tracks, max_tracks=max_tracks)
+                download_result = downloader.sync_tracks(
+                    upload.tracks, max_tracks=max_tracks
+                )
                 sync_results = download_result.get("results", sync_results)
                 sync_snapshot = download_result
                 sync_mode = "download-sync"
@@ -125,10 +132,18 @@ def run_scheduled_playlists(
                         "pending_review": True,
                         "playlist_name": upload.playlist_name or upload.original_name,
                         "target_path": navidrome_dir,
-                        "entry_count": int(sync_snapshot.get("summary", {}).get("processed", 0)),
-                        "playable_count": int(sync_snapshot.get("summary", {}).get("downloaded", 0))
-                        + int(sync_snapshot.get("summary", {}).get("already_available", 0)),
-                        "missing_count": int(sync_snapshot.get("summary", {}).get("not_found", 0))
+                        "entry_count": int(
+                            sync_snapshot.get("summary", {}).get("processed", 0)
+                        ),
+                        "playable_count": int(
+                            sync_snapshot.get("summary", {}).get("downloaded", 0)
+                        )
+                        + int(
+                            sync_snapshot.get("summary", {}).get("already_available", 0)
+                        ),
+                        "missing_count": int(
+                            sync_snapshot.get("summary", {}).get("not_found", 0)
+                        )
                         + int(sync_snapshot.get("summary", {}).get("failed", 0))
                         + low_confidence_count,
                         "reason": (
