@@ -589,8 +589,8 @@ def refresh_library_index_for_paths(
                         ),
                         "xml_has_deezer_id": int(row["xml_has_deezer_id"] or 0),
                         "xml_has_musicbrainz_track_id": int(
-                            row["xml_has_musicbrainz_track_id"] or 0
-                        ),
+                                1 if row["xml_has_musicbrainz_track_id"] else 0
+                            ),
                         "xml_core_complete": int(row["xml_core_complete"] or 0),
                         "title": str(row["title"] or ""),
                         "artist": str(row["artist"] or ""),
