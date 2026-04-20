@@ -43,7 +43,7 @@ services:
       YOUTUBE_REQUEST_RETRIES: ${YOUTUBE_REQUEST_RETRIES:-3}
       YOUTUBE_FORCE_IPV4: ${YOUTUBE_FORCE_IPV4:-1}
     volumes:
-      - playlist-data:/app/data
+      - ./data:/app/data
       - ${NAVIDROME_MUSIC_ROOT:?Set NAVIDROME_MUSIC_ROOT in .env}:/navidrome/root
       - ${NAVIDROME_PLAYLIST_DIR:?Set NAVIDROME_PLAYLIST_DIR in .env}:/navidrome/playlist
 
