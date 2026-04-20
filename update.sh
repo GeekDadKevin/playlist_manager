@@ -11,4 +11,8 @@ docker compose build --no-cache --parallel || { echo "docker compose build --no-
 echo "Starting Docker Compose services in detached mode..."
 docker compose up -d || { echo "docker compose up -d failed"; exit 1; }
 
+echo "Fixing permissions for data directory and files..."
+chown -R $(id -u):$(id -g) data || true
+chmod -R 775 data || true
+
 echo "Update complete."
