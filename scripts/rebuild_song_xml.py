@@ -530,14 +530,15 @@ def main() -> int:
         full_scan=args.full_scan,
     )
 
-    # Write log file.
-    log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_name = f"rebuild_song_xml_{log_ts}.log"
-    log_dir = root if os.access(root, os.W_OK) else Path.cwd()
+
+    log_name = "rebuild_song_xml.log"
+    log_dir = Path(__file__).resolve().parent.parent / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / log_name
 
     try:
-        log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(log_lines) + "\n")
         print(f"\nLog written to: {log_path}")
     except OSError as exc:
         print(f"\nWARNING: could not write log file: {exc}", file=sys.stderr)

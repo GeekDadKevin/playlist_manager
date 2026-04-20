@@ -172,10 +172,9 @@ def check_library(
         started_at=started_at,
         completed_at=datetime.datetime.now(datetime.UTC).isoformat(),
         scanned_count=len(audio_files),
-        changed_count=inventory_summary["changed"] if inventory_summary else 0,
+        changed_count=0,
         error_count=error_count,
         result={
-            "inventory": inventory_summary,
             "ok": ok_count,
             "warnings": warning_count,
             "errors": error_count,
