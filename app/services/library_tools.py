@@ -33,37 +33,34 @@ def _lock_for(tool: str) -> threading.Lock:
 
 
 TOOLS: dict[str, dict] = {
+    "create-db": {
+        "script": "create_library_db.py",
+        "label": "Create Database",
+        "description": "Step 1. Creates the library index database if it does not exist.",
+    },
     "refresh-catalog": {
         "script": "refresh_library_catalog.py",
         "label": "Refresh Library Catalog",
         "description": (
-            "Step 1. Rebuilds the library index database from the current music root so "
+            "Step 2. Rebuilds the library index database from the current music root so "
             "the later maintenance tools and browser reports start from fresh catalog state."
         ),
     },
+    # The rest of the tools are unordered
     "check-audio": {
         "script": "check_audio_health.py",
         "label": "Check Audio Integrity",
         "description": (
-            "Step 2. Scans every audio file in the music root and flags likely corruption. "
+            "Scans every audio file in the music root and flags likely corruption. "
             "Uses ffmpeg decode validation when available, with a mutagen parser "
             "fallback when ffmpeg is not installed."
-        ),
-    },
-    "identify-structure": {
-        "script": "identify_tracks_from_layout.py",
-        "label": "Identify By Structure",
-        "description": (
-            "Step 3. Uses the directory layout and filename pattern to set preliminary "
-            "title, artist, album, albumartist, and track number tags before the deeper "
-            "metadata repair passes."
         ),
     },
     "fix-tags": {
         "script": "fix_audio_tags.py",
         "label": "Fix Audio Tags",
         "description": (
-            "Step 4. Uses the catalog to fix folder-based artist and albumartist mismatches, "
+            "Uses the catalog to fix folder-based artist and albumartist mismatches, "
             "then enriches missing track numbers and MusicBrainz IDs from ListenBrainz "
             "and MusicBrainz in the same run."
         ),
@@ -72,7 +69,7 @@ TOOLS: dict[str, dict] = {
         "script": "identify_tracks_by_audio.py",
         "label": "Identify Tracks By Audio",
         "description": (
-            "Step 5. Uses fpcalc plus AcoustID fingerprint lookup to identify badly tagged "
+            "Uses fpcalc plus AcoustID fingerprint lookup to identify badly tagged "
             "audio, then writes back MusicBrainz-based title, artist, album, and track "
             "metadata."
         ),
@@ -81,7 +78,7 @@ TOOLS: dict[str, dict] = {
         "script": "rebuild_song_xml.py",
         "label": "Sync XML Sidecars",
         "description": (
-            "Step 6. Keeps XML sidecars aligned with embedded tags by deleting orphaned XML "
+            "Keeps XML sidecars aligned with embedded tags by deleting orphaned XML "
             "files, creating missing sidecars, and patching existing sidecars with recovered "
             "artist, album artist, MusicBrainz, and Deezer fields."
         ),
