@@ -11,13 +11,15 @@ from app.services.library_index import init_library_index, refresh_library_index
 
 import argparse
 
+
 def main():
     parser = argparse.ArgumentParser(description="(Re)Create and populate the library_index.db database from NAVIDROME_MUSIC_ROOT.")
+    parser.add_argument("root", nargs="?", default=None, help="Music library root. Defaults to NAVIDROME_MUSIC_ROOT from .env.")
     parser.add_argument("--overwrite", action="store_true", help="Delete the existing database before creating a new one.")
     args = parser.parse_args()
 
     db_path = Path("data/library_index.db")
-    music_root = os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root")
+    music_root = args.root or os.getenv("NAVIDROME_MUSIC_ROOT", "/navidrome/root")
     music_root_path = Path(music_root).expanduser().resolve()
 
     if args.overwrite and db_path.exists():
