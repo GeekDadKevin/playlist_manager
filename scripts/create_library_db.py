@@ -23,16 +23,16 @@ def main():
     music_root_path = Path(music_root).expanduser().resolve()
 
     if args.overwrite and db_path.exists():
-        print(f"Overwrite enabled: deleting {db_path} ...")
+        print(f"Overwrite enabled: deleting {db_path} ...", flush=True)
         db_path.unlink()
 
-    print(f"(Re)Creating and populating library index database at {db_path} from {music_root_path} ...")
+    print(f"(Re)Creating and populating library index database at {db_path} from {music_root_path} ...", flush=True)
     init_library_index(db_path)
     def _emit_progress(line):
-        print(line)
+        print(line, flush=True)
 
     summary = refresh_library_index(db_path, music_root_path, progress_callback=_emit_progress)
-    print(f"Database created and populated. {summary['scanned']} files scanned, {summary['changed']} new or updated.")
+    print(f"Database created and populated. {summary['scanned']} files scanned, {summary['changed']} new or updated.", flush=True)
 
 if __name__ == "__main__":
     main()

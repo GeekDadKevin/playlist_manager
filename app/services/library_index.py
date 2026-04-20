@@ -267,7 +267,7 @@ def refresh_library_index(
             _emit_progress(progress_callback, f"PROGRESS: {len(to_remove)} files to remove, {len(to_check)} files to check for changes...")
         # --- XML sidecar scan (unchanged) ---
         if scan_xml_sidecars:
-            _emit_progress(progress_callback, "PROGRESS: building XML sidecar list...")
+            _emit_progress(progress_callback, "Step 1: Indexing XML sidecars...")
             if not partial_refresh:
                 _execute_write(
                     conn,
@@ -283,11 +283,21 @@ def refresh_library_index(
                     continue
                 xml_scanned += 1
                 relative_xml_path = xml_path.relative_to(root_path).as_posix()
+                # Parse XML for error state
+                parse_ok = 0
+                error_message = ""
+                try:
+                    import xml.etree.ElementTree as ET
+                    ET.parse(xml_path)
+                    parse_ok = 1
+                except Exception as ex:
+                    error_message = str(ex)
+                now = _utc_now()
                 if xml_index == 1 or xml_index % 250 == 0 or xml_index == len(xml_paths):
                     xml_total = f" / {len(xml_paths)}" if partial_refresh else ""
                     _emit_progress(
                         progress_callback,
-                        f"PROGRESS: XML sidecars indexed {xml_index}{xml_total}",
+                        f"  Indexed {xml_index}{xml_total} XML sidecars...",
                     )
                 # Insert XML sidecar
                 _execute_write(
