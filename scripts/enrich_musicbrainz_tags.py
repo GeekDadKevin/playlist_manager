@@ -269,10 +269,12 @@ def enrich_musicbrainz_tags(
     updated = 0
     updated_paths: list[Path] = []
     unresolved: list[str] = []
+    album_mismatch: list[str] = []
     failed = 0
 
     if candidates:
         _emit(f"PROGRESS: starting MusicBrainz enrichment for {len(candidates)} files...", lines)
+
     for index, audio_path in enumerate(candidates, start=1):
         relative_path = audio_path.relative_to(root)
         if index == 1 or index % 100 == 0 or index == len(candidates):
@@ -302,6 +304,18 @@ def enrich_musicbrainz_tags(
         if not details:
             unresolved.append(str(relative_path))
             _emit(f"WARN: no MusicBrainz match for {relative_path}", lines)
+            continue
+
+        # Strict album match: only accept if MB album matches album directory exactly (case-insensitive, ignore punctuation)
+        rel = audio_path.relative_to(root)
+        album_dir = rel.parts[1].strip() if len(rel.parts) >= 2 else ""
+        mb_album = str(details.get("album") or "").strip()
+        def _normalize_album_name(name):
+            import re
+            return re.sub(r"[^a-z0-9]", "", name.lower())
+        if album_dir and mb_album and _normalize_album_name(album_dir) != _normalize_album_name(mb_album):
+            album_mismatch.append(f"{relative_path} (dir='{album_dir}' vs MB='{mb_album}')")
+            _emit(f"SKIP: album mismatch for {relative_path} (dir='{album_dir}' vs MB='{mb_album}')", lines)
             continue
 
         current = load_embedded_audio_metadata(audio_path)
@@ -381,6 +395,15 @@ def enrich_musicbrainz_tags(
             f"source={'musicbrainz-metadata' if used_metadata_fallback else 'query'}]",
             lines,
         )
+
+
+    if album_mismatch:
+        _emit("", lines)
+        _emit("Skipped due to album mismatch:", lines)
+        for item in album_mismatch[:50]:
+            _emit(f"  ALBUM_MISMATCH: {item}", lines)
+        if len(album_mismatch) > 50:
+            _emit(f"  ... and {len(album_mismatch) - 50} more album-mismatch file(s)", lines)
 
     if unresolved:
         _emit("", lines)

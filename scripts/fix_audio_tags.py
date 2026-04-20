@@ -258,11 +258,12 @@ def fix_tags(
         _emit(f"PROGRESS: skipped {skipped_depth} file(s) with insufficient folder depth.", lines)
     _emit(f"PROGRESS: normal files: {len(normal)}  VA files: {len(va)}", lines)
 
+
     # ------------------------------------------------------------------
-    # Pass 1: normal artist folders — set both artist and albumartist.
+    # Pass 1: normal artist folders — set artist, albumartist, and album tags.
     # ------------------------------------------------------------------
     _emit("", lines)
-    _emit("--- Pass 1: fixing artist / albumartist for normal folders ---", lines)
+    _emit("--- Pass 1: fixing artist / albumartist / album for normal folders ---", lines)
 
     p1_fixed = 0
     p1_skipped = 0
@@ -279,6 +280,9 @@ def fix_tags(
             _emit(f"PROGRESS: Pass 1 progress: {idx + 1}/{len(normal)} files ({p1_fixed} fixed so far)", lines)
 
         canonical_artist = _artist_dir_for(audio_path, root)
+        rel = audio_path.relative_to(root)
+        # Album folder is the second part: {artist}/{album}/...
+        canonical_album = rel.parts[1].strip() if len(rel.parts) >= 2 else ""
         _emit(f"CHECK TAGS: {idx + 1}/{len(normal)}  {audio_path.relative_to(root)}", lines)
 
         try:
@@ -298,10 +302,12 @@ def fix_tags(
 
         current_artist = _first(mf, "artist")
         current_albumartist = _first(mf, "albumartist")
+        current_album = _first(mf, "album")
         needs_artist = current_artist != canonical_artist
         needs_albumartist = current_albumartist != canonical_artist
+        needs_album = canonical_album and (current_album != canonical_album)
 
-        if not needs_artist and not needs_albumartist:
+        if not needs_artist and not needs_albumartist and not needs_album:
             continue
 
         changes: list[str] = []
@@ -311,6 +317,8 @@ def fix_tags(
             changes.append(
                 f"albumartist: {current_albumartist!r} → {canonical_artist!r}"
             )
+        if needs_album:
+            changes.append(f"album: {current_album!r} → {canonical_album!r}")
 
         action = "[DRY-RUN] would fix" if dry_run else "FIXED"
         if not dry_run:
@@ -319,6 +327,8 @@ def fix_tags(
                     mf["artist"] = [canonical_artist]
                 if needs_albumartist:
                     mf["albumartist"] = [canonical_artist]
+                if needs_album:
+                    mf["album"] = [canonical_album]
                 mf.save()
             except Exception as exc:
                 _emit(f"  ERROR writing {audio_path.name}: {exc}", lines)
@@ -519,6 +529,7 @@ def fix_tags(
 
 
 def main() -> int:
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "root",
@@ -543,6 +554,12 @@ def main() -> int:
         action="store_true",
         help="Inspect all indexed audio files instead of only the catalog-reported mismatches.",
     )
+    parser.add_argument(
+        "--file",
+        dest="files",
+        action="append",
+        help="One or more audio file paths to spot-check (bypasses DB). Can be specified multiple times.",
+    )
     args = parser.parse_args()
 
     if not args.root:
@@ -558,11 +575,25 @@ def main() -> int:
         print(f"ERROR: {root} is not a directory.", file=sys.stderr)
         return 1
 
+    selected_paths = None
+    if args.files:
+        selected_paths = []
+        for f in args.files:
+            p = Path(f).expanduser().resolve()
+            if not p.is_file():
+                print(f"WARNING: {p} is not a file, skipping.", file=sys.stderr)
+                continue
+            selected_paths.append(p)
+        if not selected_paths:
+            print("ERROR: No valid files provided for --file.", file=sys.stderr)
+            return 1
+
     log_lines = fix_tags(
         root,
         dry_run=args.dry_run,
         limit=args.limit,
         full_scan=args.full_scan,
+        selected_paths=selected_paths,
     )
 
     log_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

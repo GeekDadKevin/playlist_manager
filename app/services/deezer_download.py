@@ -210,10 +210,17 @@ class DeezerDownloadService:
             match: dict[str, Any],
             bytes_downloaded: int,
             bytes_total: int,
+            *,
+            finalized: bool = False,
+            failed: bool = False,
         ) -> None:
             percent = 0
             if bytes_total > 0:
                 percent = min(100, int((bytes_downloaded / bytes_total) * 100))
+            if finalized and not failed:
+                percent = 100
+            if failed:
+                percent = 0
             label = self._format_track_label(track, match)
             item_key = str(
                 match.get("deezer_id")
@@ -224,24 +231,14 @@ class DeezerDownloadService:
             with progress_lock:
                 now_ts = time.time()
                 existing = progress_items.get(item_key, {})
-                if percent >= 100:
-                    progress_items[item_key] = {
-                        "track": label,
-                        "percent": 100,
-                        "bytes_downloaded": bytes_downloaded,
-                        "bytes_total": bytes_total,
-                        "updated_at": _utc_timestamp(),
-                        "completed_at_ts": existing.get("completed_at_ts", now_ts),
-                    }
-                else:
-                    progress_items[item_key] = {
-                        "track": label,
-                        "percent": percent,
-                        "bytes_downloaded": bytes_downloaded,
-                        "bytes_total": bytes_total,
-                        "updated_at": _utc_timestamp(),
-                        "completed_at_ts": 0,
-                    }
+                progress_items[item_key] = {
+                    "track": label,
+                    "percent": percent,
+                    "bytes_downloaded": bytes_downloaded,
+                    "bytes_total": bytes_total,
+                    "updated_at": _utc_timestamp(),
+                    "completed_at_ts": existing.get("completed_at_ts", now_ts) if percent == 100 else 0,
+                }
                 expired_keys = [
                     key
                     for key, item in progress_items.items()
@@ -287,6 +284,11 @@ class DeezerDownloadService:
                     track,
                     download_progress=report_download_progress,
                 )
+                # Only report 100% progress if downloaded, or 0% if failed
+                if result.get("status") == "downloaded":
+                    report_download_progress(track, result.get("match", {}), result.get("download", {}).get("bytes_downloaded", 0), result.get("download", {}).get("bytes_total", 0), finalized=True)
+                elif result.get("status") == "failed":
+                    report_download_progress(track, result.get("match", {}), 0, 0, finalized=True, failed=True)
                 result["index"] = index
                 result["completed_at"] = _utc_timestamp()
                 results.append(result)
