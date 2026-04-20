@@ -28,7 +28,10 @@ def main():
 
     print(f"(Re)Creating and populating library index database at {db_path} from {music_root_path} ...")
     init_library_index(db_path)
-    summary = refresh_library_index(db_path, music_root_path)
+    def _emit_progress(line):
+        print(line)
+
+    summary = refresh_library_index(db_path, music_root_path, progress_callback=_emit_progress)
     print(f"Database created and populated. {summary['scanned']} files scanned, {summary['changed']} new or updated.")
 
 if __name__ == "__main__":

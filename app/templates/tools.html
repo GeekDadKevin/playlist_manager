@@ -142,9 +142,6 @@
       <div class="tool-summary-title">Tool Session</div>
       <div style="display:flex;align-items:center;gap:.5rem;">
         <h3 id="tool-run-modal-title" class="tool-run-modal-title" style="margin:0;">Library tool</h3>
-        <button type="button" class="btn-tool-run" id="tool-run-modal-copyall" title="Copy all log lines" style="padding:.2rem .4rem;display:flex;align-items:center;gap:.2rem;">
-          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;"><rect x="6" y="2" width="9" height="14" rx="2" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="5" width="9" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-        </button>
       </div>
     </div>
     <span class="tool-status" id="tool-run-modal-status">idle</span>
@@ -156,8 +153,7 @@
     <div class="tool-summary-grid" id="tool-run-modal-meta-grid"></div>
   </div>
   <div class="tool-log-shell tool-run-modal-log-shell" style="position:relative;">
-    <button type="button" class="btn-tool-run" id="tool-run-modal-copyall" style="position:absolute;top:8px;right:8px;z-index:2;">Copy All</button>
-    <pre class="tool-log-output" id="tool-run-modal-log">Waiting for tool output.</pre>
+    <pre class="tool-log-output" id="tool-run-modal-log" style="user-select: text;">Waiting for tool output.</pre>
   </div>
   <div class="tool-run-modal-actions">
     <button type="button" class="btn-tool-run btn-tool-stop" id="tool-run-modal-stop" disabled>Force Stop</button>
@@ -554,6 +550,7 @@
     overflow-y: auto;
     padding: .5rem;
     flex: 0 0 340px;
+    user-select: text;
   }
   .tool-log-output {
     margin: 0;
@@ -794,19 +791,7 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  // Copy All for modal log
-  var copyBtn = document.getElementById('tool-run-modal-copyall');
-  if (copyBtn) {
-    copyBtn.onclick = function() {
-      var log = document.getElementById('tool-run-modal-log');
-      if (!log) return;
-      var text = log.innerText || log.textContent || '';
-      navigator.clipboard.writeText(text).then(function() {
-        copyBtn.classList.add('copied');
-        setTimeout(function() { copyBtn.classList.remove('copied'); }, 1200);
-      });
-    };
-  }
+  // Copy All button removed; log is now always selectable for manual copy.
   (function () {
   const viewer = window.PlaylistSyncLiveRunViewer;
   const streamBase = {{ url_for('web.tools_stream', tool='PLACEHOLDER') | tojson }}.replace('PLACEHOLDER', '');

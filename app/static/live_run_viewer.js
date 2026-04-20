@@ -88,24 +88,12 @@ window.PlaylistSyncLiveRunViewer = (() => {
     logEl.textContent = emptyText;
   }
 
-    function copyAllLog(logId) {
-      var logEl = document.getElementById(logId);
-      if (!logEl) return;
-      var text = '';
-      if (logEl.tagName === 'PRE' || logEl.tagName === 'DIV') {
-        text = logEl.innerText || logEl.textContent || '';
-      }
-      if (text) {
-        navigator.clipboard.writeText(text);
-      }
-    }
-
+    // copyAllLog removed; log is now always selectable for manual copy.
     return {
       appendLine,
       classify,
       renderSummary,
       resetLog,
       setStatusChip,
-      copyAllLog,
     };
 })();

@@ -278,6 +278,7 @@ def refresh_library_index(
             if partial_refresh:
                 xml_paths = xml_paths[:limit]
             for xml_index, xml_path in enumerate(xml_paths, start=1):
+                paired_audio_path = _paired_audio_path_for_xml(xml_path)
                 if not xml_path.is_file():
                     continue
                 xml_scanned += 1
