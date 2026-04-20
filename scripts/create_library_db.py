@@ -2,8 +2,9 @@
 """
 create_library_db.py - Create the library_index.db database if it does not exist.
 """
-import os
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.library_index import init_library_index
 
 def main():
