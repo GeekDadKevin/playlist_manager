@@ -33,10 +33,10 @@ def _lock_for(tool: str) -> threading.Lock:
 
 
 TOOLS: dict[str, dict] = {
-    "create-db": {
+    "recreate-db": {
         "script": "create_library_db.py",
-        "label": "Create Database",
-        "description": "Step 1. Creates the library index database if it does not exist.",
+        "label": "(Re)Create Database",
+        "description": "Step 1. (Re)creates and fully populates the library index database from the current music root.",
     },
     "refresh-catalog": {
         "script": "refresh_library_catalog.py",

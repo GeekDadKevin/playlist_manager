@@ -49,10 +49,17 @@
         <input type="checkbox" id="dry-{{ tool_id }}">
         <span>Dry run (preview only)</span>
       </label>
+      {% if tool_id == 'recreate-db' %}
+      <label class="checkbox-row">
+        <input type="checkbox" id="overwrite-{{ tool_id }}">
+        <span>Overwrite existing database</span>
+      </label>
+      {% else %}
       <label class="checkbox-row">
         <input type="checkbox" id="full-{{ tool_id }}">
         <span>Full scan</span>
       </label>
+      {% endif %}
       <label class="limit-row">
         <span>Limit</span>
         <input type="number" id="limit-{{ tool_id }}" min="1" step="1" placeholder="all"
